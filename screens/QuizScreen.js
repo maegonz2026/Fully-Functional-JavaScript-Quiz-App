@@ -1,0 +1,357 @@
+import React, { useState } from "react";
+
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+} from "react-native";
+
+import { SafeAreaView } from "react-native-safe-area-context";
+
+// Correct import: questions.js is inside the data folder.
+import questions from "../data/questions";
+
+// Randomizes the question order without modifying the original array.
+function shuffle(array) {
+  const result = [...array];
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+
+  return result;
+}
+
+export default function QuizScreen({ navigation }) {
+
+  // Selects 10 random questions when a new QuizScreen instance is created.
+  const [quizQuestions] = useState(() =>
+    shuffle(questions).slice(0, 10)
+  );
+
+  // Tracks the current question, score, and selected answer.
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+
+  // Gets the question currently being displayed.
+  const currentQuestion = quizQuestions[currentIndex];
+
+  // Checks the selected answer and updates the score.
+  function selectAnswer(answer) {
+    // Prevents the user from selecting multiple answers for one question.
+    if (selectedAnswer !== null) {
+      return;
+    }
+
+    setSelectedAnswer(answer);
+
+    // Adds one point if the selected answer is correct.
+    if (answer === currentQuestion.answer) {
+      setScore((previous) => previous + 1);
+    }
+  }
+
+  // Moves to the next question or opens the Results screen.
+  function nextQuestion() {
+    // The user must select an answer before continuing.
+    if (selectedAnswer === null) {
+      return;
+    }
+
+    // Checks whether this is the final question.
+    if (currentIndex === quizQuestions.length - 1) {
+      const finalScore =
+        score +
+        (selectedAnswer === currentQuestion.answer ? 1 : 0);
+
+      // Sends the final score and total number of questions to ResultsScreen.
+      navigation.replace("Results", {
+        score: finalScore,
+        total: quizQuestions.length,
+      });
+
+      return;
+    }
+
+    // Advances the question and clears the previous selection.
+    setCurrentIndex((previous) => previous + 1);
+    setSelectedAnswer(null);
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+
+        {/* PROGRESS: Displays the current question and score. */}
+        <View style={styles.progressContainer}>
+          <Text style={styles.progress}>
+            Question {currentIndex + 1} of {quizQuestions.length}
+          </Text>
+
+          <Text style={styles.score}>
+            Score: {score}
+          </Text>
+        </View>
+
+        {/* PROGRESS BAR: Changes width as the user advances. */}
+        <View style={styles.progressBar}>
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width: `${
+                  ((currentIndex + 1) / quizQuestions.length) * 100
+                }%`,
+              },
+            ]}
+          />
+        </View>
+
+        {/* QUESTION CARD: Displays the active question. */}
+        <View style={styles.card}>
+          <Text style={styles.questionNumber}>
+            JAVASCRIPT QUESTION
+          </Text>
+
+          <Text style={styles.question}>
+            {currentQuestion.question}
+          </Text>
+        </View>
+
+        {/* ANSWERS: Creates a button for every answer option. */}
+        <View style={styles.answers}>
+          {currentQuestion.options.map((option) => {
+            const isSelected = selectedAnswer === option;
+            const isCorrect = option === currentQuestion.answer;
+
+            let buttonStyle = styles.answerButton;
+            let textStyle = styles.answerText;
+
+            // Highlights the correct answer after an option is selected.
+            if (selectedAnswer !== null && isCorrect) {
+              buttonStyle = [
+                styles.answerButton,
+                styles.correct,
+              ];
+
+              textStyle = [
+                styles.answerText,
+                styles.correctText,
+              ];
+            }
+
+            // Highlights the user's selected answer if it is incorrect.
+            else if (isSelected) {
+              buttonStyle = [
+                styles.answerButton,
+                styles.wrong,
+              ];
+
+              textStyle = [
+                styles.answerText,
+                styles.wrongText,
+              ];
+            }
+
+            return (
+              <Pressable
+                key={option}
+                style={buttonStyle}
+                onPress={() => selectAnswer(option)}
+                disabled={selectedAnswer !== null}
+              >
+                <Text style={textStyle}>
+                  {option}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* FEEDBACK: Displays correctness and the question explanation. */}
+        {selectedAnswer !== null && (
+          <View style={styles.feedback}>
+            <Text style={styles.feedbackTitle}>
+              {selectedAnswer === currentQuestion.answer
+                ? "Correct!"
+                : "Not quite!"}
+            </Text>
+
+            <Text style={styles.feedbackText}>
+              {currentQuestion.explanation}
+            </Text>
+          </View>
+        )}
+
+        {/* NEXT BUTTON: Disabled until the user selects an answer. */}
+        <Pressable
+          style={[
+            styles.nextButton,
+            selectedAnswer === null && styles.disabled,
+          ]}
+          disabled={selectedAnswer === null}
+          onPress={nextQuestion}
+        >
+          <Text style={styles.nextText}>
+            {currentIndex === quizQuestions.length - 1
+              ? "Finish Quiz"
+              : "Next Question"}
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// STYLES: Controls the quiz layout, answers, feedback, and progress bar.
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
+
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 30,
+  },
+
+  progressContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  progress: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#475569",
+  },
+
+  score: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#2563eb",
+  },
+
+  progressBar: {
+    height: 8,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 10,
+    marginTop: 12,
+    overflow: "hidden",
+  },
+
+  progressFill: {
+    height: "100%",
+    backgroundColor: "#2563eb",
+    borderRadius: 10,
+  },
+
+  card: {
+    backgroundColor: "#172554",
+    borderRadius: 24,
+    padding: 25,
+    marginTop: 25,
+    minHeight: 210,
+    justifyContent: "center",
+  },
+
+  questionNumber: {
+    color: "#93c5fd",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginBottom: 15,
+  },
+
+  question: {
+    color: "#ffffff",
+    fontSize: 24,
+    fontWeight: "800",
+    lineHeight: 34,
+  },
+
+  answers: {
+    marginTop: 20,
+    gap: 12,
+  },
+
+  answerButton: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    padding: 17,
+    borderRadius: 15,
+  },
+
+  answerText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#334155",
+  },
+
+  correct: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#22c55e",
+  },
+
+  correctText: {
+    color: "#166534",
+  },
+
+  wrong: {
+    backgroundColor: "#fee2e2",
+    borderColor: "#ef4444",
+  },
+
+  wrongText: {
+    color: "#991b1b",
+  },
+
+  feedback: {
+    backgroundColor: "#ffffff",
+    padding: 15,
+    borderRadius: 15,
+    marginTop: 15,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+
+  feedbackTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#172554",
+  },
+
+  feedbackText: {
+    color: "#64748b",
+    marginTop: 5,
+    lineHeight: 20,
+  },
+
+  nextButton: {
+    backgroundColor: "#2563eb",
+    paddingVertical: 17,
+    borderRadius: 15,
+    alignItems: "center",
+    marginTop: 20,
+  },
+
+  disabled: {
+    backgroundColor: "#cbd5e1",
+  },
+
+  nextText: {
+    color: "#ffffff",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+});

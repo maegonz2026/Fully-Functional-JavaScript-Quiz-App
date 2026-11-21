@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useState,
+  useCallback,
 } from "react";
 
 // Imports the existing JavaScript question collection.
@@ -39,17 +40,17 @@ export function QuizProvider({ children }) {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
 
   // Starts a new quiz and resets all previous quiz data.
-  function startQuiz() {
+  const startQuiz = useCallback(() => {
     const randomizedQuestions = shuffle(questions).slice(0, 10);
 
     setQuizQuestions(randomizedQuestions);
     setCurrentIndex(0);
     setScore(0);
     setSelectedAnswer(null);
-  }
+  }, []);
 
   // Checks and stores the selected answer.
-  function selectAnswer(answer) {
+  const selectAnswer = useCallback((answer) => {
 
     // Prevents selecting multiple answers for one question.
     if (selectedAnswer !== null) {
@@ -58,6 +59,11 @@ export function QuizProvider({ children }) {
 
     const currentQuestion = quizQuestions[currentIndex];
 
+    // Prevents accessing an unavailable question.
+    if (!currentQuestion) {
+      return;
+    }
+
     // Saves the selected answer.
     setSelectedAnswer(answer);
 
@@ -65,10 +71,10 @@ export function QuizProvider({ children }) {
     if (answer === currentQuestion.answer) {
       setScore((previous) => previous + 1);
     }
-  }
+  }, [selectedAnswer, quizQuestions, currentIndex]);
 
   // Moves to the next question or prepares the final result.
-  function nextQuestion() {
+  const nextQuestion = useCallback(() => {
 
     // Requires an answer before allowing the user to continue.
     if (selectedAnswer === null) {
@@ -76,6 +82,11 @@ export function QuizProvider({ children }) {
     }
 
     const currentQuestion = quizQuestions[currentIndex];
+
+    // Prevents accessing an unavailable question.
+    if (!currentQuestion) {
+      return null;
+    }
 
     // Checks whether the current question is the last one.
     if (currentIndex === quizQuestions.length - 1) {
@@ -101,7 +112,7 @@ export function QuizProvider({ children }) {
     return {
       finished: false,
     };
-  }
+  }, [selectedAnswer, quizQuestions, currentIndex, score]);
 
   // Shares quiz data and functions with child components.
   const value = {

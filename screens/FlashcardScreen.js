@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import questions from "../data/questions";
 
 export default function FlashcardScreen({ route }) {
+
   // Receives the selected deck from DecksScreen.
   const { deck } = route.params;
 
@@ -43,12 +44,7 @@ export default function FlashcardScreen({ route }) {
     setIndex(0);
     setFlipped(false);
 
-    // Cleanup function runs before this effect is repeated
-    // or when the component is unmounted.
-    return () => {
-      // No state updates are needed during cleanup.
-    };
-  }, [deck.id]);
+  }, [deck.id, deckQuestions]);
 
   // Gets the flashcard at the current index.
   const card = cards[index];

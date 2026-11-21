@@ -29,7 +29,7 @@ export default function QuizScreen({ navigation }) {
   // Starts a new quiz when the QuizScreen is mounted.
   useEffect(() => {
     startQuiz();
-  }, []);
+  }, [startQuiz]);
 
   // Prevents accessing a question before the quiz is initialized.
   if (quizQuestions.length === 0) {

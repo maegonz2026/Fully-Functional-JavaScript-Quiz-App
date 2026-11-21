@@ -1,3 +1,4 @@
+
 import React from "react";
 
 import { NavigationContainer } from "@react-navigation/native";
@@ -10,13 +11,13 @@ import FlashcardScreen from "./screens/FlashcardScreen";
 import QuizScreen from "./screens/QuizScreen";
 import ResultsScreen from "./screens/ResultsScreen";
 
-// Creates the stack navigator used to move between screens.
+// Creates the stack navigator used to manage screen navigation.
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   return (
     <NavigationContainer>
-      {/* Main navigation configuration for the application. */}
+      {/* Manages the navigation history of the application. */}
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{
@@ -27,34 +28,54 @@ export default function App() {
           headerTitleStyle: {
             fontWeight: "bold",
           },
+
+          // Uses a slide animation when opening another screen.
+          animation: "slide_from_right",
+
+          // Allows users to return to the previous screen.
+          headerBackVisible: true,
+
+          // Keeps the header consistent across screens.
+          headerShadowVisible: false,
+          contentStyle: {
+            backgroundColor: "#f8fafc",
+          },
         }}
       >
         {/* Main landing screen. */}
         <Stack.Screen
           name="Home"
           component={HomeScreen}
-          options={{ headerShown: false }}
+          options={{
+            headerShown: false,
+          }}
         />
 
         {/* Displays the available study decks. */}
         <Stack.Screen
           name="Decks"
           component={DecksScreen}
-          options={{ title: "Study Decks" }}
+          options={{
+            title: "Study Decks",
+          }}
         />
 
         {/* Displays flashcards from the selected deck. */}
         <Stack.Screen
           name="Flashcards"
           component={FlashcardScreen}
-          options={{ title: "Flashcards" }}
+          options={{
+            title: "Flashcards",
+          }}
         />
 
         {/* Displays the JavaScript quiz. */}
         <Stack.Screen
           name="Quiz"
           component={QuizScreen}
-          options={{ title: "JavaScript Quiz" }}
+          options={{
+            title: "JavaScript Quiz",
+          }}
         />
 
         {/* Displays the final quiz score. */}
@@ -63,7 +84,12 @@ export default function App() {
           component={ResultsScreen}
           options={{
             title: "Quiz Results",
+
+            // Hides the header back button on the results screen.
             headerBackVisible: false,
+
+            // Prevents returning to the quiz using the back gesture.
+            gestureEnabled: false,
           }}
         />
       </Stack.Navigator>

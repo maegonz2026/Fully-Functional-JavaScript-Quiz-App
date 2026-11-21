@@ -11,11 +11,26 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ResultsScreen({ navigation, route }) {
 
-  // Receives the score and total from QuizScreen.
-  const { score, total } = route.params;
+  // Receives the final score and total questions from QuizScreen.
+  const score = route.params?.score ?? 0;
+  const total = route.params?.total ?? 10;
 
-  // Calculates the percentage earned in the quiz.
-  const percentage = Math.round((score / total) * 100);
+  // Calculates the percentage while preventing division by zero.
+  const percentage =
+    total > 0 ? Math.round((score / total) * 100) : 0;
+
+  // Starts a new quiz by replacing the current Results screen.
+  function tryAgain() {
+    navigation.replace("Quiz");
+  }
+
+  // Clears the previous navigation history and returns to Home.
+  function goHome() {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Home" }],
+    });
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -51,20 +66,24 @@ export default function ResultsScreen({ navigation, route }) {
         </Text>
       </View>
 
-      {/* NAVIGATION: Allows the user to retry or return home. */}
+      {/* NAVIGATION: Allows the user to retry or return Home. */}
       <View style={styles.buttons}>
         <Pressable
           style={styles.primaryButton}
-          onPress={() => navigation.replace("Quiz")}
+          onPress={tryAgain}
         >
-          <Text style={styles.primaryText}>Try Again</Text>
+          <Text style={styles.primaryText}>
+            Try Again
+          </Text>
         </Pressable>
 
         <Pressable
           style={styles.secondaryButton}
-          onPress={() => navigation.navigate("Home")}
+          onPress={goHome}
         >
-          <Text style={styles.secondaryText}>Back to Home</Text>
+          <Text style={styles.secondaryText}>
+            Back to Home
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>

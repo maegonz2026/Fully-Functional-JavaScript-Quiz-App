@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 import {
   View,
@@ -9,6 +9,13 @@ import {
 
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Imports the AsyncStorage utility functions.
+import {
+  getStoredData,
+  saveStoredData,
+  STORAGE_KEYS,
+} from "../utils/storage";
+
 export default function ResultsScreen({ navigation, route }) {
 
   // Receives the final score and total questions from QuizScreen.
@@ -18,6 +25,64 @@ export default function ResultsScreen({ navigation, route }) {
   // Calculates the percentage while preventing division by zero.
   const percentage =
     total > 0 ? Math.round((score / total) * 100) : 0;
+
+  // Keeps the same result record if the effect runs again.
+  const resultRef = useRef(null);
+
+  // Saves the completed quiz result to the device.
+  useEffect(() => {
+
+    // Creates the result record only once.
+    if (resultRef.current === null) {
+      resultRef.current = {
+        id: Date.now().toString(),
+        score,
+        total,
+        percentage,
+        completedAt: new Date().toISOString(),
+      };
+    }
+
+    // Saves the result without displaying a storage message.
+    async function saveQuizResult() {
+      try {
+        // Retrieves previously saved quiz results.
+        const previousResults = await getStoredData(
+          STORAGE_KEYS.QUIZ_HISTORY,
+          []
+        );
+
+        // Ensures the retrieved history is an array.
+        const quizHistory = Array.isArray(previousResults)
+          ? previousResults
+          : [];
+
+        // Prevents the same result from being saved twice.
+        const alreadySaved = quizHistory.some(
+          (result) => result.id === resultRef.current.id
+        );
+
+        if (!alreadySaved) {
+          // Adds the new result while preserving previous records.
+          const updatedHistory = [
+            ...quizHistory,
+            resultRef.current,
+          ];
+
+          await saveStoredData(
+            STORAGE_KEYS.QUIZ_HISTORY,
+            updatedHistory
+          );
+        }
+
+      } catch (error) {
+        // Keeps storage errors from interrupting the Results screen.
+      }
+    }
+
+    saveQuizResult();
+
+  }, [score, total, percentage]);
 
   // Starts a new quiz by replacing the current Results screen.
   function tryAgain() {

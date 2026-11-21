@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 
 import {
   View,
@@ -13,8 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen({ navigation }) {
-
-  // Stores the quote selected for the current day.
+  // Stores the motivational quote selected for the current day.
   const [dailyQuote, setDailyQuote] = useState(null);
 
   // Tracks whether the API request is still running.
@@ -22,6 +21,12 @@ export default function HomeScreen({ navigation }) {
 
   // Stores an error message if the API request fails.
   const [error, setError] = useState("");
+
+  // Prevents multiple API requests from running simultaneously.
+  const isFetching = useRef(false);
+
+  // Stores the active request so it can be cancelled when necessary.
+  const activeController = useRef(null);
 
   // Calculates the current day number within the year.
   const getDayOfYear = () => {
@@ -33,69 +38,102 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  // Fetches quotes and selects one based on today's date.
-  const fetchDailyQuote = async (isActive = () => true) => {
+  // Fetches motivational quotes from the ZenQuotes API.
+  const fetchDailyQuote = useCallback(async () => {
+    // Prevents another request while one is already running.
+    if (isFetching.current) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    activeController.current = controller;
+    isFetching.current = true;
+
     try {
       setLoadingQuote(true);
       setError("");
 
-      // Requests the available quotes from DummyJSON.
+      // Requests motivational quotes from ZenQuotes.
       const response = await fetch(
-        "https://dummyjson.com/quotes?limit=0"
+        "https://zenquotes.io/api/quotes",
+        { signal: controller.signal }
       );
 
       // Checks whether the API request was successful.
       if (!response.ok) {
-        throw new Error("Unable to retrieve quotes.");
+        throw new Error("Unable to retrieve motivational quotes.");
       }
 
       // Converts the API response into JavaScript data.
       const data = await response.json();
 
       // Checks whether the API returned a valid list.
-      if (!data.quotes || data.quotes.length === 0) {
-        throw new Error("No quotes were returned.");
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("No motivational quotes were returned.");
       }
 
       // Uses the current day to select a consistent quote.
-      const dayIndex = (getDayOfYear() - 1) % data.quotes.length;
+      const dayIndex = (getDayOfYear() - 1) % data.length;
 
-      const selectedQuote = data.quotes[dayIndex];
+      const selectedQuote = data[dayIndex];
+
+      // Checks whether the selected quote contains valid information.
+      if (!selectedQuote.q || !selectedQuote.a) {
+        throw new Error("The selected quote is incomplete.");
+      }
 
       // Saves the selected quote and its author.
-      if (isActive()) {
+      if (!controller.signal.aborted) {
         setDailyQuote({
-          content: selectedQuote.quote,
-          author: selectedQuote.author,
+          content: selectedQuote.q,
+          author: selectedQuote.a,
         });
       }
 
     } catch (err) {
+      // Ignores errors caused by cancelling the request.
+      if (err.name === "AbortError") {
+        return;
+      }
+
       // Displays an error instead of using backup quotes.
-      if (isActive()) {
-        setError("Unable to load today's quote. Please try again.");
+      if (!controller.signal.aborted) {
+        setError("Unable to load today's study motivation. Please try again.");
         setDailyQuote(null);
       }
 
     } finally {
-      // Stops the loading indicator after the request finishes.
-      if (isActive()) {
-        setLoadingQuote(false);
+      // Updates the loading state only if this request is still active.
+      if (activeController.current === controller) {
+        activeController.current = null;
+        isFetching.current = false;
+
+        if (!controller.signal.aborted) {
+          setLoadingQuote(false);
+        }
       }
     }
-  };
-
-  // Loads the daily quote when the Home screen first mounts.
-  useEffect(() => {
-    let isMounted = true;
-
-    fetchDailyQuote(() => isMounted);
-
-    // Prevents state updates after the screen unmounts.
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  // Loads the daily motivational quote when the Home screen mounts.
+  useEffect(() => {
+    fetchDailyQuote();
+
+    // Cancels the active request when the screen unmounts.
+    return () => {
+      activeController.current?.abort();
+      activeController.current = null;
+      isFetching.current = false;
+    };
+  }, [fetchDailyQuote]);
+
+  // Handles retrying the API request.
+  const handleRetry = () => {
+    if (!isFetching.current) {
+      fetchDailyQuote();
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -162,10 +200,10 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* DAILY QUOTE: Displays the quote selected for today's date. */}
+        {/* DAILY MOTIVATION: Displays a quote retrieved from an API. */}
         <View style={styles.quoteCard}>
           <Text style={styles.quoteLabel}>
-            ✨ DAILY STUDY MOTIVATION
+            ✨ DAILY MOTIVATIONAL QOUTES
           </Text>
 
           {/* Displays a loading indicator while fetching quotes. */}
@@ -178,21 +216,24 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
           ) : error ? (
-            // Displays an error and retry button if fetching fails.
+            /* Displays an error and retry button if fetching fails. */
             <View style={styles.quoteLoading}>
               <Text style={styles.quoteError}>
                 {error}
               </Text>
 
               <Pressable
-                style={styles.retryButton}
-                onPress={() => fetchDailyQuote()}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={handleRetry}
               >
                 <Text style={styles.retryText}>Try Again</Text>
               </Pressable>
             </View>
           ) : (
-            // Displays the selected quote and its author.
+            /* Displays the selected motivational quote and author. */
             <>
               <Text style={styles.quoteMark}>“</Text>
 

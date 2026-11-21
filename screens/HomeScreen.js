@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 
 import {
@@ -12,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen({ navigation }) {
+
   // Stores the quote selected for the current day.
   const [dailyQuote, setDailyQuote] = useState(null);
 
@@ -32,7 +34,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   // Fetches quotes and selects one based on today's date.
-  const fetchDailyQuote = async () => {
+  const fetchDailyQuote = async (isActive = () => true) => {
     try {
       setLoadingQuote(true);
       setError("");
@@ -61,28 +63,46 @@ export default function HomeScreen({ navigation }) {
       const selectedQuote = data.quotes[dayIndex];
 
       // Saves the selected quote and its author.
-      setDailyQuote({
-        content: selectedQuote.quote,
-        author: selectedQuote.author,
-      });
+      if (isActive()) {
+        setDailyQuote({
+          content: selectedQuote.quote,
+          author: selectedQuote.author,
+        });
+      }
+
     } catch (err) {
       // Displays an error instead of using backup quotes.
-      setError("Unable to load today's quote. Please try again.");
-      setDailyQuote(null);
+      if (isActive()) {
+        setError("Unable to load today's quote. Please try again.");
+        setDailyQuote(null);
+      }
+
     } finally {
       // Stops the loading indicator after the request finishes.
-      setLoadingQuote(false);
+      if (isActive()) {
+        setLoadingQuote(false);
+      }
     }
   };
 
   // Loads the daily quote when the Home screen first mounts.
   useEffect(() => {
-    fetchDailyQuote();
+    let isMounted = true;
+
+    fetchDailyQuote(() => isMounted);
+
+    // Prevents state updates after the screen unmounts.
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
 
         {/* HEADER: Displays the app logo and introduction. */}
         <View style={styles.header}>
@@ -97,20 +117,37 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* MAIN MENU: Navigates to the Quiz and Decks screens. */}
+        {/* MAIN MENU: Navigates to the Quiz, Decks, and History screens. */}
         <View style={styles.menu}>
           <Pressable
-            style={styles.primaryButton}
+            style={({ pressed }) => [
+              styles.quizButton,
+              pressed && styles.buttonPressed,
+            ]}
             onPress={() => navigation.navigate("Quiz")}
           >
-            <Text style={styles.primaryText}>Start Quiz</Text>
+            <Text style={styles.quizText}>Start Quiz</Text>
           </Pressable>
 
           <Pressable
-            style={styles.secondaryButton}
+            style={({ pressed }) => [
+              styles.deckButton,
+              pressed && styles.buttonPressed,
+            ]}
             onPress={() => navigation.navigate("Decks")}
           >
-            <Text style={styles.secondaryText}>Study Decks</Text>
+            <Text style={styles.deckText}>Study Decks</Text>
+          </Pressable>
+
+          {/* Opens the saved quiz history. */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.historyButton,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={() => navigation.navigate("History")}
+          >
+            <Text style={styles.historyText}>Quiz History</Text>
           </Pressable>
         </View>
 
@@ -143,11 +180,13 @@ export default function HomeScreen({ navigation }) {
           ) : error ? (
             // Displays an error and retry button if fetching fails.
             <View style={styles.quoteLoading}>
-              <Text style={styles.quoteError}>{error}</Text>
+              <Text style={styles.quoteError}>
+                {error}
+              </Text>
 
               <Pressable
                 style={styles.retryButton}
-                onPress={fetchDailyQuote}
+                onPress={() => fetchDailyQuote()}
               >
                 <Text style={styles.retryText}>Try Again</Text>
               </Pressable>
@@ -181,9 +220,14 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 5,
+  },
+
   header: {
     alignItems: "center",
-    marginTop: 40,
+    marginTop: 20,
   },
 
   logo: {
@@ -197,7 +241,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#172554",
     overflow: "hidden",
-    marginBottom: 20,
+    marginBottom: 10,
   },
 
   title: {
@@ -224,42 +268,60 @@ const styles = StyleSheet.create({
 
   menu: {
     gap: 14,
-    marginTop: 40,
+    marginTop: 25,
   },
 
-  primaryButton: {
+  quizButton: {
     backgroundColor: "#2563eb",
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: "center",
   },
 
-  primaryText: {
+  quizText: {
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "800",
   },
 
-  secondaryButton: {
+  deckButton: {
     backgroundColor: "#ffffff",
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#dbeafe",
+    borderColor: "#b6cff0",
   },
 
-  secondaryText: {
+  deckText: {
     color: "#1e40af",
     fontSize: 18,
     fontWeight: "700",
+  },
+
+  historyButton: {
+    backgroundColor: "#2563eb",
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+
+  historyText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  buttonPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
   },
 
   infoCard: {
     backgroundColor: "#eff6ff",
     padding: 20,
     borderRadius: 18,
-    marginTop: 30,
+    marginTop: 25,
   },
 
   infoTitle: {
@@ -275,11 +337,11 @@ const styles = StyleSheet.create({
   },
 
   quoteCard: {
-    backgroundColor: "#2563eb",
-    padding: 22,
+    backgroundColor: "#172554",
+    padding: 20,
     borderRadius: 20,
     marginTop: 25,
-    marginBottom: 30,
+    marginBottom: 25,
   },
 
   quoteLabel: {
@@ -320,18 +382,16 @@ const styles = StyleSheet.create({
 
   quoteMark: {
     color: "#ffffff",
-    fontSize: 55,
+    fontSize: 30,
     fontWeight: "900",
-    height: 55,
     marginTop: 12,
   },
 
   quoteText: {
     color: "#ffffff",
-    fontSize: 19,
+    fontSize: 16,
     fontWeight: "700",
-    lineHeight: 29,
-    marginTop: 8,
+    lineHeight: 25,
   },
 
   quoteAuthor: {

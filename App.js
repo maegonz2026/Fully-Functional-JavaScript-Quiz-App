@@ -9,6 +9,7 @@ import DecksScreen from "./screens/DecksScreen";
 import FlashcardScreen from "./screens/FlashcardScreen";
 import QuizScreen from "./screens/QuizScreen";
 import ResultsScreen from "./screens/ResultsScreen";
+import HistoryScreen from "./screens/HistoryScreen";
 
 // Imports the provider for shared quiz state.
 import { QuizProvider } from "./context/QuizContext";
@@ -96,6 +97,16 @@ export default function App() {
               gestureEnabled: false,
             }}
           />
+
+          {/* Displays previously saved quiz attempts. */}
+          <Stack.Screen
+            name="History"
+            component={HistoryScreen}
+            options={{
+              title: "Quiz History",
+            }}
+          />
+
         </Stack.Navigator>
       </NavigationContainer>
     </QuizProvider>

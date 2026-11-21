@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect } from "react";
 
 import {
   View,
@@ -10,77 +10,56 @@ import {
 
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Correct import: questions.js is inside the data folder.
-import questions from "../data/questions";
-
-// Randomizes the question order without modifying the original array.
-function shuffle(array) {
-  const result = [...array];
-
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-
-  return result;
-}
+// Imports the shared quiz state and functions from Context API.
+import { useQuiz } from "../context/QuizContext";
 
 export default function QuizScreen({ navigation }) {
 
-  // Selects 10 random questions when a new QuizScreen instance is created.
-  const [quizQuestions] = useState(() =>
-    shuffle(questions).slice(0, 10)
-  );
+  // Gets the quiz data and functions from the shared context.
+  const {
+    quizQuestions,
+    currentIndex,
+    score,
+    selectedAnswer,
+    startQuiz,
+    selectAnswer,
+    nextQuestion,
+  } = useQuiz();
 
-  // Tracks the current question, score, and selected answer.
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  // Starts a new quiz when the QuizScreen is mounted.
+  useEffect(() => {
+    startQuiz();
+  }, []);
+
+  // Prevents accessing a question before the quiz is initialized.
+  if (quizQuestions.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>
+            Preparing your quiz...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Gets the question currently being displayed.
   const currentQuestion = quizQuestions[currentIndex];
 
-  // Checks the selected answer and updates the score.
-  function selectAnswer(answer) {
-    // Prevents the user from selecting multiple answers for one question.
-    if (selectedAnswer !== null) {
-      return;
-    }
-
-    setSelectedAnswer(answer);
-
-    // Adds one point if the selected answer is correct.
-    if (answer === currentQuestion.answer) {
-      setScore((previous) => previous + 1);
-    }
-  }
-
   // Moves to the next question or opens the Results screen.
-  function nextQuestion() {
-    // The user must select an answer before continuing.
-    if (selectedAnswer === null) {
-      return;
-    }
+  function handleNextQuestion() {
 
-    // Checks whether this is the final question.
-    if (currentIndex === quizQuestions.length - 1) {
-      const finalScore =
-        score +
-        (selectedAnswer === currentQuestion.answer ? 1 : 0);
+    // Gets the result returned by the shared context.
+    const result = nextQuestion();
 
-      // Sends the final score and total number of questions to ResultsScreen.
+    // Opens the Results screen when all questions are completed.
+    if (result?.finished) {
       navigation.replace("Results", {
-        score: finalScore,
-        total: quizQuestions.length,
+        score: result.score,
+        total: result.total,
       });
-
-      return;
     }
-
-    // Advances the question and clears the previous selection.
-    setCurrentIndex((previous) => previous + 1);
-    setSelectedAnswer(null);
   }
 
   return (
@@ -198,7 +177,7 @@ export default function QuizScreen({ navigation }) {
             selectedAnswer === null && styles.disabled,
           ]}
           disabled={selectedAnswer === null}
-          onPress={nextQuestion}
+          onPress={handleNextQuestion}
         >
           <Text style={styles.nextText}>
             {currentIndex === quizQuestions.length - 1
@@ -216,6 +195,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f8fafc",
+  },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  loadingText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#475569",
   },
 
   scrollContent: {

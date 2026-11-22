@@ -11,6 +11,7 @@ import QuizScreen from "./screens/QuizScreen";
 import ResultsScreen from "./screens/ResultsScreen";
 import HistoryScreen from "./screens/HistoryScreen";
 import DifficultyScreen from "./screens/DifficultyScreen";
+import DifficultyLevelsScreen from "./screens/DifficultyLevelsScreen";
 
 // Imports the provider for shared quiz state.
 import { QuizProvider } from "./context/QuizContext";
@@ -114,6 +115,14 @@ export default function App() {
             options={{ 
               title: "Choose Difficulty"
              }}
+          />
+
+          <Stack.Screen
+            name="DifficultyLevels"
+            component={DifficultyLevelsScreen}
+            options={{ 
+              title: "Select Level" 
+            }}
           />
         </Stack.Navigator>
       </NavigationContainer>

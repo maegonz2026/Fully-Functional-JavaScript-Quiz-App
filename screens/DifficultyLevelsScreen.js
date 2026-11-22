@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  Alert,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -50,7 +51,7 @@ const DIFFICULTIES = {
   },
 };
 
-// Determine how many questions belong to each level.
+// Determine question count per level.
 const getQuestionCount = (level) => {
   if (level <= 10) return 3;
   if (level <= 25) return 4;
@@ -59,7 +60,7 @@ const getQuestionCount = (level) => {
   return 10;
 };
 
-// Generate the levels belonging to the selected difficulty.
+// Generate levels for the selected difficulty.
 const generateLevels = (difficulty) => {
   const config = DIFFICULTIES[difficulty];
 
@@ -87,7 +88,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
 
   const [completedLevels, setCompletedLevels] = useState([]);
 
-  // Reload saved progress whenever this screen becomes active.
+  // Reload progress whenever the screen becomes active.
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -135,8 +136,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
     }, [])
   );
 
-  // A level is unlocked if it is the first level,
-  // already completed, or its previous level is completed.
+  // Check if a level is unlocked.
   const isLevelUnlocked = (levelNumber) => {
     return (
       levelNumber === 1 ||
@@ -145,9 +145,24 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
     );
   };
 
-  // Open the selected level.
+  // Open unlocked levels or warn when a locked level is tapped.
   const handleLevelPress = (level) => {
-    if (!isLevelUnlocked(level.number)) return;
+    const isUnlocked = isLevelUnlocked(level.number);
+
+    if (!isUnlocked) {
+      Alert.alert(
+        "🔒 Level Locked",
+        `You need to complete Level ${level.number - 1} with at least 65% to unlock Level ${level.number}. Keep practicing!`,
+        [
+          {
+            text: "Got it",
+            style: "default",
+          },
+        ]
+      );
+
+      return;
+    }
 
     navigation.navigate("Quiz", {
       level: level.number,
@@ -155,7 +170,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
     });
   };
 
-  // Handle invalid difficulty names.
+  // Handle invalid difficulty.
   if (!config) {
     return (
       <View style={styles.container}>
@@ -262,7 +277,6 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
           return (
             <Pressable
               key={level.number}
-              disabled={!isUnlocked}
               onPress={() => handleLevelPress(level)}
               style={({ pressed }) => [
                 styles.levelCard,
@@ -272,19 +286,29 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
                 pressed && styles.pressedLevelCard,
               ]}
             >
+              {/* Rounded level number container */}
               <View
                 style={[
                   styles.levelNumberContainer,
-                  isUnlocked && {
-                    backgroundColor: config.background,
+                  {
+                    backgroundColor: isCompleted
+                      ? "#16A34A"
+                      : isUnlocked
+                      ? config.background
+                      : "#E2E8F0",
                   },
-                  isCompleted && styles.completedNumberContainer,
                 ]}
               >
                 <Text
                   style={[
                     styles.levelNumber,
-                    isUnlocked && { color: config.color },
+                    {
+                      color: isCompleted
+                        ? "#FFFFFF"
+                        : isUnlocked
+                        ? config.color
+                        : "#94A3B8",
+                    },
                     isCompleted && styles.completedNumber,
                   ]}
                 >
@@ -395,7 +419,7 @@ const styles = StyleSheet.create({
   },
 
   overviewCard: {
-    backgroundColor: "#172554",
+    backgroundColor: "#2563EB",
     borderRadius: 18,
     padding: 20,
     marginBottom: 27,
@@ -417,7 +441,7 @@ const styles = StyleSheet.create({
 
   overviewDivider: {
     height: 1,
-    backgroundColor: "#334575",
+    backgroundColor: "#122354",
     marginVertical: 18,
   },
 
@@ -481,6 +505,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E2E8F0",
     borderWidth: 1,
     borderColor: "#E2E8F0",
+    overflow: "hidden",
   },
 
   unlockedLevelCard: {
@@ -515,10 +540,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
-  },
-
-  completedNumberContainer: {
-    backgroundColor: "#16A34A",
+    overflow: "hidden",
   },
 
   levelNumber: {
@@ -528,7 +550,6 @@ const styles = StyleSheet.create({
   },
 
   completedNumber: {
-    color: "#FFFFFF",
     fontSize: 23,
   },
 

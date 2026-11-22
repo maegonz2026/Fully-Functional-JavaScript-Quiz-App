@@ -164,11 +164,6 @@ export default function DifficultyScreen({ navigation }) {
     });
   };
 
-  // Open the separate daily challenge screen.
-  const openDailyChallenge = () => {
-    navigation.navigate("DailyChallenge");
-  };
-
   return (
     <ScrollView
       style={styles.container}
@@ -178,15 +173,6 @@ export default function DifficultyScreen({ navigation }) {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Introduction */}
-      <View style={styles.introContainer}>
-        <Text style={styles.title}>Choose Your Difficulty</Text>
-
-        <Text style={styles.subtitle}>
-          Select your challenge and progress through 50 levels
-          to master JavaScript.
-        </Text>
-      </View>
 
       {/* Overall learning journey */}
       <View style={styles.overviewCard}>
@@ -320,48 +306,6 @@ export default function DifficultyScreen({ navigation }) {
           </Pressable>
         );
       })}
-
-      {/* Daily Challenge */}
-      <View style={styles.dailySection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Special Challenge</Text>
-
-          <Text style={styles.sectionSubtitle}>
-            Practice every day with a new challenge.
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={openDailyChallenge}
-          style={({ pressed }) => [
-            styles.dailyCard,
-            pressed && styles.dailyPressed,
-          ]}
-        >
-          <View style={styles.dailyIconContainer}>
-            <Text style={styles.dailyIcon}>📅</Text>
-          </View>
-
-          <View style={styles.dailyInfo}>
-            <View style={styles.dailyTitleRow}>
-              <Text style={styles.dailyTitle}>Daily Challenge</Text>
-
-              <View style={styles.dailyBadge}>
-                <Text style={styles.dailyBadgeText}>DAILY</Text>
-              </View>
-            </View>
-
-            <Text style={styles.dailyDescription}>
-              Answer 10 randomly selected questions from all
-              250 JavaScript questions.
-            </Text>
-
-            <Text style={styles.dailyAction}>
-              Start today's challenge →
-            </Text>
-          </View>
-        </Pressable>
-      </View>
     </ScrollView>
   );
 }
@@ -376,28 +320,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
-  introContainer: {
-    marginBottom: 22,
-  },
-
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#172554",
-    marginBottom: 7,
-  },
-
-  subtitle: {
-    fontSize: 14,
-    color: "#64748B",
-    lineHeight: 21,
-  },
-
   overviewCard: {
-    backgroundColor: "#172554",
+    backgroundColor: "#2563EB",
     borderRadius: 18,
     padding: 20,
-    marginBottom: 28,
+    marginBottom: 30,
+    marginTop: 20,
   },
 
   overviewTop: {
@@ -430,7 +358,7 @@ const styles = StyleSheet.create({
 
   overviewDivider: {
     height: 1,
-    backgroundColor: "#334575",
+    backgroundColor: "#122354",
     marginVertical: 18,
   },
 
@@ -592,88 +520,5 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     marginLeft: 8,
     fontWeight: "600",
-  },
-
-  dailySection: {
-    marginTop: 14,
-  },
-
-  dailyCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 17,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    elevation: 2,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-  },
-
-  dailyPressed: {
-    opacity: 0.75,
-    transform: [{ scale: 0.99 }],
-  },
-
-  dailyIconContainer: {
-    width: 55,
-    height: 55,
-    borderRadius: 15,
-    backgroundColor: "#FEF3C7",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 14,
-  },
-
-  dailyIcon: {
-    fontSize: 28,
-  },
-
-  dailyInfo: {
-    flex: 1,
-  },
-
-  dailyTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-
-  dailyTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#172554",
-  },
-
-  dailyBadge: {
-    backgroundColor: "#FEF3C7",
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-
-  dailyBadgeText: {
-    color: "#92400E",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-
-  dailyDescription: {
-    color: "#64748B",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
-  },
-
-  dailyAction: {
-    color: "#B45309",
-    fontSize: 12,
-    fontWeight: "800",
-    marginTop: 9,
   },
 });

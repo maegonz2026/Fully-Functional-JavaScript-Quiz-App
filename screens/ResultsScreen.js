@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from "react";
 
 import {
@@ -18,7 +17,7 @@ import {
 } from "../utils/storage";
 
 // Passing percentage required to complete a level.
-const PASSING_PERCENTAGE = 75;
+const PASSING_PERCENTAGE = 65;
 
 // AsyncStorage key for completed level progress.
 const LEVEL_PROGRESS_KEY = "@javascript_mastery:level_progress";
@@ -32,11 +31,11 @@ const DIFFICULTY_RANGES = {
 };
 
 export default function ResultsScreen({ navigation, route }) {
-  // Get the result information passed from QuizScreen.
+  // Receive the quiz result from QuizScreen.
   const rawScore = Number(route.params?.score ?? 0);
   const rawTotal = Number(route.params?.total ?? 0);
 
-  // Make sure score and total are valid numbers.
+  // Validate the score and total.
   const total = Number.isFinite(rawTotal)
     ? Math.max(0, Math.floor(rawTotal))
     : 0;
@@ -48,7 +47,7 @@ export default function ResultsScreen({ navigation, route }) {
   const level = route.params?.level ?? null;
   const difficulty = route.params?.difficulty ?? null;
 
-  // Validate whether this result belongs to a valid level quiz.
+  // Validate the selected difficulty and level.
   const levelNumber = Number(level);
   const difficultyRange = DIFFICULTY_RANGES[difficulty];
 
@@ -58,33 +57,37 @@ export default function ResultsScreen({ navigation, route }) {
     levelNumber >= difficultyRange.start &&
     levelNumber <= difficultyRange.end;
 
-  // Calculate the player's percentage.
+  // Calculate the final percentage.
   const percentage =
     total > 0 ? Math.round((score / total) * 100) : 0;
 
-  // Calculate the minimum correct answers required to pass.
+  // Calculate the minimum score required to pass.
   const requiredScore =
     total > 0
       ? Math.ceil((total * PASSING_PERCENTAGE) / 100)
       : 0;
 
   // Determine whether the player passed.
-  const passed =
-    total > 0 && score >= requiredScore;
+  const passed = total > 0 && score >= requiredScore;
 
-  // Calculate how many additional correct answers were needed.
+  // Calculate additional correct answers needed.
   const additionalCorrectAnswers = Math.max(
     0,
     requiredScore - score
   );
 
-  // Keep one result ID while this screen is mounted.
-  // This prevents duplicate history entries during re-renders.
+  // Determine the final level in the current difficulty.
+  const isLastLevel =
+    isLevelQuiz &&
+    levelNumber === difficultyRange.end;
+
+  // Keep one result record for this screen instance.
   const resultRef = useRef(null);
 
-  // Prevent multiple save operations from running simultaneously.
+  // Prevent duplicate save operations.
   const savePromiseRef = useRef(null);
 
+  // Create the result record once.
   if (resultRef.current === null) {
     resultRef.current = {
       id: Date.now().toString(),
@@ -98,16 +101,13 @@ export default function ResultsScreen({ navigation, route }) {
     };
   }
 
-  // Save quiz history and completed level progress.
+  // Save quiz history and level progress.
   useEffect(() => {
     async function saveQuizResult() {
+      const result = resultRef.current;
+
+      // SAVE QUIZ HISTORY.
       try {
-        const result = resultRef.current;
-
-        // ---------------------------------------
-        // SAVE QUIZ HISTORY
-        // ---------------------------------------
-
         const previousResults = await getStoredData(
           STORAGE_KEYS.QUIZ_HISTORY,
           []
@@ -127,71 +127,71 @@ export default function ResultsScreen({ navigation, route }) {
             [...quizHistory, result]
           );
         }
+      } catch (error) {
+        console.error("Error saving quiz history:", error);
+      }
 
-        // ---------------------------------------
-        // SAVE COMPLETED LEVEL PROGRESS
-        // ---------------------------------------
+      // Only passed level quizzes update progression.
+      if (!isLevelQuiz || !passed) {
+        return;
+      }
 
-        // Only level quizzes that meet the passing
-        // requirement can update level progress.
-        if (isLevelQuiz && passed) {
-          const previousProgress = await getStoredData(
-            LEVEL_PROGRESS_KEY,
-            {}
-          );
+      // SAVE COMPLETED LEVEL PROGRESS.
+      try {
+        const previousProgress = await getStoredData(
+          LEVEL_PROGRESS_KEY,
+          {}
+        );
 
-          // Protect against invalid stored data.
-          const progress =
-            previousProgress &&
-            typeof previousProgress === "object" &&
-            !Array.isArray(previousProgress)
-              ? previousProgress
-              : {};
+        const progress =
+          previousProgress &&
+          typeof previousProgress === "object" &&
+          !Array.isArray(previousProgress)
+            ? previousProgress
+            : {};
 
-          const storedLevels = Array.isArray(
-            progress.completedLevels
-          )
-            ? progress.completedLevels
-            : [];
+        const storedLevels = Array.isArray(
+          progress.completedLevels
+        )
+          ? progress.completedLevels
+          : [];
 
-          // Normalize and remove invalid or duplicate levels.
-          const completedLevels = [
-            ...new Set(
-              storedLevels
-                .map(Number)
-                .filter(
-                  (item) =>
-                    Number.isInteger(item) &&
-                    item >= 1 &&
-                    item <= 50
-                )
-            ),
-          ];
+        // Remove invalid entries and duplicates.
+        const completedLevels = [
+          ...new Set(
+            storedLevels
+              .map(Number)
+              .filter(
+                (item) =>
+                  Number.isInteger(item) &&
+                  item >= 1 &&
+                  item <= 50
+              )
+          ),
+        ];
 
-          // Add the newly completed level only once.
-          if (!completedLevels.includes(levelNumber)) {
-            completedLevels.push(levelNumber);
+        // Add the level if it has not been completed.
+        if (!completedLevels.includes(levelNumber)) {
+          completedLevels.push(levelNumber);
+          completedLevels.sort((a, b) => a - b);
 
-            completedLevels.sort((a, b) => a - b);
-
-            await saveStoredData(LEVEL_PROGRESS_KEY, {
-              ...progress,
-              completedLevels,
-            });
-          }
+          await saveStoredData(LEVEL_PROGRESS_KEY, {
+            ...progress,
+            completedLevels,
+          });
         }
       } catch (error) {
-        console.error("Error saving quiz results:", error);
+        console.error("Error saving level progress:", error);
       }
     }
 
-    // Run the save operation only once per mounted result screen.
+    // Execute the save operation only once.
     if (!savePromiseRef.current) {
       savePromiseRef.current = saveQuizResult();
     }
   }, [isLevelQuiz, passed, levelNumber]);
 
-  // Restart the same level or general quiz.
+  // Restart the same level.
   function tryAgain() {
     if (isLevelQuiz) {
       navigation.replace("Quiz", {
@@ -203,11 +203,21 @@ export default function ResultsScreen({ navigation, route }) {
     }
   }
 
-  // Return to the previous screen.
-  function goBack() {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else if (isLevelQuiz) {
+  // Proceed to the next level.
+  function goToNextLevel() {
+    if (!isLevelQuiz || !passed || isLastLevel) {
+      return;
+    }
+
+    navigation.replace("Quiz", {
+      level: levelNumber + 1,
+      difficulty,
+    });
+  }
+
+  // Return to the difficulty levels screen.
+  function goToLevels() {
+    if (isLevelQuiz) {
       navigation.replace("DifficultyLevels", {
         difficulty,
       });
@@ -216,9 +226,17 @@ export default function ResultsScreen({ navigation, route }) {
     }
   }
 
+  // Return to the previous screen.
+  function goBack() {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      goToLevels();
+    }
+  }
+
   // Display feedback based on the player's result.
   function getResultMessage() {
-    // General quizzes and daily challenges.
     if (!isLevelQuiz) {
       return percentage >= 80
         ? "Excellent JavaScript knowledge! Keep up the great work."
@@ -227,18 +245,19 @@ export default function ResultsScreen({ navigation, route }) {
         : "Keep practicing! Review what you have learned and try again.";
     }
 
-    // Perfect score.
     if (passed && percentage === 100) {
       return `Perfect score! You answered all ${total} questions correctly and successfully completed ${difficulty} Level ${levelNumber}.`;
     }
 
-    // Passed with at least 75%.
-    if (passed) {
-      return `Congratulations! You answered ${score} out of ${total} questions correctly (${percentage}%). You met the ${PASSING_PERCENTAGE}% passing requirement and successfully completed ${difficulty} Level ${levelNumber}. You can now proceed to the next level.`;
+    if (passed && isLastLevel) {
+      return `Congratulations! You completed ${difficulty} difficulty by passing Level ${levelNumber}. You can now return to the difficulty selection screen.`;
     }
 
-    // Failed to meet the passing requirement.
-    return `You answered ${score} out of ${total} questions correctly (${percentage}%). You needed at least ${requiredScore} correct answers to meet the ${PASSING_PERCENTAGE}% passing requirement.`;
+    if (passed) {
+      return `Congratulations! You answered ${score} out of ${total} questions correctly (${percentage}%). You met the ${PASSING_PERCENTAGE}% passing requirement. Level ${levelNumber + 1} is now available!`;
+    }
+
+    return `You answered ${score} out of ${total} questions correctly (${percentage}%). You needed at least ${requiredScore} correct answers to meet the ${PASSING_PERCENTAGE}% passing requirement. You needed ${additionalCorrectAnswers} more correct ${additionalCorrectAnswers === 1 ? "answer" : "answers"} to pass. Review the material and try again!`;
   }
 
   return (
@@ -349,17 +368,50 @@ export default function ResultsScreen({ navigation, route }) {
 
         {/* ACTION BUTTONS */}
         <View style={styles.buttons}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={tryAgain}
-          >
-            <Text style={styles.primaryText}>
-              ↻  Try Again
-            </Text>
-          </Pressable>
+          {/* NEXT LEVEL BUTTON: Only appears when passed. */}
+          {isLevelQuiz && passed && !isLastLevel && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={goToNextLevel}
+            >
+              <Text style={styles.primaryText}>
+                Next Level →
+              </Text>
+            </Pressable>
+          )}
+
+          {/* FINAL DIFFICULTY BUTTON. */}
+          {isLevelQuiz && passed && isLastLevel && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={goToLevels}
+            >
+              <Text style={styles.primaryText}>
+                View Difficulties →
+              </Text>
+            </Pressable>
+          )}
+
+          {/* TRY AGAIN: Only appears when failed. */}
+          {(!isLevelQuiz || !passed) && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={tryAgain}
+            >
+              <Text style={styles.primaryText}>
+                ↻ Try Again
+              </Text>
+            </Pressable>
+          )}
 
           <Pressable
             style={({ pressed }) => [
@@ -369,7 +421,7 @@ export default function ResultsScreen({ navigation, route }) {
             onPress={goBack}
           >
             <Text style={styles.secondaryText}>
-              ←  Back
+              ← Back
             </Text>
           </Pressable>
         </View>

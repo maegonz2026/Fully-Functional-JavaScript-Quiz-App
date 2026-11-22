@@ -9,7 +9,7 @@ import DecksScreen from "./screens/DecksScreen";
 import FlashcardScreen from "./screens/FlashcardScreen";
 import QuizScreen from "./screens/QuizScreen";
 import ResultsScreen from "./screens/ResultsScreen";
-import HistoryScreen from "./screens/HistoryScreen";
+import PerformanceScreen from "./screens/PerformanceScreen";
 import DifficultyScreen from "./screens/DifficultyScreen";
 import DifficultyLevelsScreen from "./screens/DifficultyLevelsScreen";
 
@@ -102,10 +102,10 @@ export default function App() {
 
           {/* Displays previously saved quiz attempts. */}
           <Stack.Screen
-            name="History"
-            component={HistoryScreen}
-            options={{
-              title: "Quiz History",
+            name="Performance & Quiz History"
+            component={PerformanceScreen}
+            options={{ 
+              title: "Performance & Quiz History" 
             }}
           />
 

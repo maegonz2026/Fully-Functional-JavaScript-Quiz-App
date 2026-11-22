@@ -183,9 +183,9 @@ export default function HomeScreen({ navigation }) {
               styles.historyButton,
               pressed && styles.buttonPressed,
             ]}
-            onPress={() => navigation.navigate("History")}
+            onPress={() => navigation.navigate("Performance & Quiz History")}
           >
-            <Text style={styles.historyText}>Quiz History</Text>
+            <Text style={styles.historyText}>Performance & Quiz History</Text>
           </Pressable>
         </View>
 

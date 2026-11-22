@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 
 import {
   View,
@@ -9,8 +9,12 @@ import {
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Difficulty information and the levels assigned to each category.
+const LEVEL_PROGRESS_KEY = "@javascript_mastery:level_progress";
+
+// Difficulty information and level ranges.
 const DIFFICULTIES = [
   {
     name: "Easy",
@@ -18,9 +22,10 @@ const DIFFICULTIES = [
     icon: "🌱",
     color: "#16A34A",
     background: "#F0FDF4",
+    levelStart: 1,
+    levelEnd: 20,
     levelRange: "Levels 1–20",
     questionCount: "70 Questions",
-    unlocked: true,
   },
   {
     name: "Medium",
@@ -28,19 +33,21 @@ const DIFFICULTIES = [
     icon: "⚡",
     color: "#2563EB",
     background: "#EFF6FF",
+    levelStart: 21,
+    levelEnd: 35,
     levelRange: "Levels 21–35",
     questionCount: "70 Questions",
-    unlocked: false,
   },
   {
     name: "Hard",
     description: "Challenge yourself with advanced concepts.",
     icon: "🔥",
-    color: "#EA580C",
+    color: "#EA5808",
     background: "#FFF7ED",
+    levelStart: 36,
+    levelEnd: 45,
     levelRange: "Levels 36–45",
     questionCount: "60 Questions",
-    unlocked: false,
   },
   {
     name: "Expert",
@@ -48,22 +55,109 @@ const DIFFICULTIES = [
     icon: "🏆",
     color: "#9333EA",
     background: "#FAF5FF",
+    levelStart: 46,
+    levelEnd: 50,
     levelRange: "Levels 46–50",
     questionCount: "50 Questions",
-    unlocked: false,
   },
 ];
 
+// Check whether every level in a range has been completed.
+const hasCompletedRange = (completedLevels, start, end) => {
+  for (let level = start; level <= end; level++) {
+    if (!completedLevels.includes(level)) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export default function DifficultyScreen({ navigation }) {
-  // Read the Android/iOS bottom safe area to prevent content
-  // and buttons from being hidden behind the system navigation bar.
   const insets = useSafeAreaInsets();
 
-  // Open the level list belonging to the selected difficulty.
+  const [completedLevels, setCompletedLevels] = useState([]);
+
+  // Reload progress whenever the difficulty screen is focused.
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      const loadProgress = async () => {
+        try {
+          const savedProgress = await AsyncStorage.getItem(
+            LEVEL_PROGRESS_KEY
+          );
+
+          if (!isActive) return;
+
+          if (savedProgress) {
+            const parsedProgress = JSON.parse(savedProgress);
+
+            const savedLevels = Array.isArray(
+              parsedProgress.completedLevels
+            )
+              ? parsedProgress.completedLevels
+              : [];
+
+            setCompletedLevels(
+              savedLevels
+                .map(Number)
+                .filter(
+                  (level) =>
+                    Number.isInteger(level) &&
+                    level >= 1 &&
+                    level <= 50
+                )
+            );
+          } else {
+            setCompletedLevels([]);
+          }
+        } catch (error) {
+          console.error("Error loading difficulty progress:", error);
+        }
+      };
+
+      loadProgress();
+
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
+
+  // Determine whether each difficulty is unlocked.
+  const getDifficultyStatus = (difficulty) => {
+    const previousDifficulty = DIFFICULTIES.find(
+      (item) => item.levelEnd === difficulty.levelStart - 1
+    );
+
+    const isUnlocked =
+      difficulty.name === "Easy" ||
+      (previousDifficulty &&
+        hasCompletedRange(
+          completedLevels,
+          previousDifficulty.levelStart,
+          previousDifficulty.levelEnd
+        ));
+
+    const isCompleted = hasCompletedRange(
+      completedLevels,
+      difficulty.levelStart,
+      difficulty.levelEnd
+    );
+
+    return {
+      isUnlocked,
+      isCompleted,
+    };
+  };
+
+  // Open the selected difficulty if it is unlocked.
   const openDifficulty = (difficulty) => {
-    if (!difficulty.unlocked) {
-      return;
-    }
+    const { isUnlocked } = getDifficultyStatus(difficulty);
+
+    if (!isUnlocked) return;
 
     navigation.navigate("DifficultyLevels", {
       difficulty: difficulty.name,
@@ -139,80 +233,95 @@ export default function DifficultyScreen({ navigation }) {
         </Text>
       </View>
 
-      {DIFFICULTIES.map((difficulty) => (
-        <Pressable
-          key={difficulty.name}
-          onPress={() => openDifficulty(difficulty)}
-          disabled={!difficulty.unlocked}
-          style={({ pressed }) => [
-            styles.difficultyCard,
-            !difficulty.unlocked && styles.lockedCard,
-            pressed && difficulty.unlocked && styles.pressedCard,
-          ]}
-        >
-          {/* Difficulty icon */}
-          <View
-            style={[
-              styles.iconContainer,
-              { backgroundColor: difficulty.background },
-              !difficulty.unlocked && styles.lockedIconContainer,
+      {DIFFICULTIES.map((difficulty) => {
+        const { isUnlocked, isCompleted } =
+          getDifficultyStatus(difficulty);
+
+        return (
+          <Pressable
+            key={difficulty.name}
+            onPress={() => openDifficulty(difficulty)}
+            disabled={!isUnlocked}
+            style={({ pressed }) => [
+              styles.difficultyCard,
+              !isUnlocked && styles.lockedCard,
+              pressed && isUnlocked && styles.pressedCard,
             ]}
           >
-            <Text style={styles.difficultyIcon}>
-              {difficulty.icon}
-            </Text>
-          </View>
-
-          {/* Difficulty information */}
-          <View style={styles.difficultyInfo}>
-            <View style={styles.difficultyTitleRow}>
-              <Text style={styles.difficultyName}>
-                {difficulty.name}
-              </Text>
-
-              {!difficulty.unlocked && (
-                <View style={styles.lockBadge}>
-                  <Text style={styles.lockBadgeText}>🔒 Locked</Text>
-                </View>
-              )}
-
-              {difficulty.unlocked && (
-                <View style={styles.unlockedBadge}>
-                  <Text style={styles.unlockedBadgeText}>
-                    Unlocked
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <Text style={styles.difficultyDescription}>
-              {difficulty.description}
-            </Text>
-
-            <View style={styles.detailsRow}>
-              <Text
-                style={[
-                  styles.levelRange,
-                  { color: difficulty.color },
-                ]}
-              >
-                {difficulty.levelRange}
-              </Text>
-
-              <Text style={styles.questionCount}>
-                {difficulty.questionCount}
+            {/* Difficulty icon */}
+            <View
+              style={[
+                styles.iconContainer,
+                { backgroundColor: difficulty.background },
+                !isUnlocked && styles.lockedIconContainer,
+              ]}
+            >
+              <Text style={styles.difficultyIcon}>
+                {difficulty.icon}
               </Text>
             </View>
-          </View>
 
-          {/* Navigation indicator */}
-          <Text style={styles.arrow}>
-            {difficulty.unlocked ? "›" : "🔒"}
-          </Text>
-        </Pressable>
-      ))}
+            {/* Difficulty information */}
+            <View style={styles.difficultyInfo}>
+              <View style={styles.difficultyTitleRow}>
+                <Text style={styles.difficultyName}>
+                  {difficulty.name}
+                </Text>
 
-      {/* Daily Challenge - separate from the 50 regular levels */}
+                {!isUnlocked && (
+                  <View style={styles.lockBadge}>
+                    <Text style={styles.lockBadgeText}>
+                      🔒 Locked
+                    </Text>
+                  </View>
+                )}
+
+                {isUnlocked && isCompleted && (
+                  <View style={styles.unlockedBadge}>
+                    <Text style={styles.unlockedBadgeText}>
+                      ✓ Completed
+                    </Text>
+                  </View>
+                )}
+
+                {isUnlocked && !isCompleted && (
+                  <View style={styles.unlockedBadge}>
+                    <Text style={styles.unlockedBadgeText}>
+                      Unlocked
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <Text style={styles.difficultyDescription}>
+                {difficulty.description}
+              </Text>
+
+              <View style={styles.detailsRow}>
+                <Text
+                  style={[
+                    styles.levelRange,
+                    { color: difficulty.color },
+                  ]}
+                >
+                  {difficulty.levelRange}
+                </Text>
+
+                <Text style={styles.questionCount}>
+                  {difficulty.questionCount}
+                </Text>
+              </View>
+            </View>
+
+            {/* Navigation indicator */}
+            <Text style={styles.arrow}>
+              {isUnlocked ? "›" : "🔒"}
+            </Text>
+          </Pressable>
+        );
+      })}
+
+      {/* Daily Challenge */}
       <View style={styles.dailySection}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Special Challenge</Text>
@@ -258,7 +367,6 @@ export default function DifficultyScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  // Main page layout.
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
@@ -268,7 +376,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
-  // Introduction.
   introContainer: {
     marginBottom: 22,
   },
@@ -286,7 +393,6 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
 
-  // Overview card.
   overviewCard: {
     backgroundColor: "#172554",
     borderRadius: 18,
@@ -350,7 +456,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Section headings.
   sectionHeader: {
     marginBottom: 14,
   },
@@ -368,7 +473,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // Difficulty cards.
   difficultyCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -490,7 +594,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Daily Challenge card.
   dailySection: {
     marginTop: 14,
   },

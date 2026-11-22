@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 
 import {
   View,
@@ -9,9 +9,12 @@ import {
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const LEVEL_PROGRESS_KEY = "@javascript_mastery:level_progress";
 
 // Difficulty configuration.
-// The question counts follow the agreed 50-level structure.
 const DIFFICULTIES = {
   Easy: {
     icon: "🌱",
@@ -50,14 +53,13 @@ const DIFFICULTIES = {
 // Determine how many questions belong to each level.
 const getQuestionCount = (level) => {
   if (level <= 10) return 3;
-  if (level <= 20) return 4;
   if (level <= 25) return 4;
   if (level <= 35) return 5;
   if (level <= 45) return 6;
   return 10;
 };
 
-// Generate only the levels belonging to the selected difficulty.
+// Generate the levels belonging to the selected difficulty.
 const generateLevels = (difficulty) => {
   const config = DIFFICULTIES[difficulty];
 
@@ -79,24 +81,73 @@ const generateLevels = (difficulty) => {
 export default function DifficultyLevelsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
-  // Read the selected difficulty sent by DifficultyScreen.
   const difficulty = route.params?.difficulty || "Easy";
-
   const config = DIFFICULTIES[difficulty];
-
-  // Generate the selected difficulty's level list.
   const levels = generateLevels(difficulty);
 
-  // Temporary unlock logic for the UI.
-  // Actual progression and saved unlocks will be implemented
-  // in the next commit.
-  const unlockedLevel = 1;
+  const [completedLevels, setCompletedLevels] = useState([]);
 
-  // Open the quiz with the selected level.
+  // Reload saved progress whenever this screen becomes active.
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      const loadProgress = async () => {
+        try {
+          const savedProgress = await AsyncStorage.getItem(
+            LEVEL_PROGRESS_KEY
+          );
+
+          if (!isActive) return;
+
+          if (savedProgress) {
+            const parsedProgress = JSON.parse(savedProgress);
+
+            const savedLevels = Array.isArray(
+              parsedProgress.completedLevels
+            )
+              ? parsedProgress.completedLevels
+              : [];
+
+            setCompletedLevels(
+              savedLevels
+                .map(Number)
+                .filter(
+                  (level) =>
+                    Number.isInteger(level) &&
+                    level >= 1 &&
+                    level <= 50
+                )
+            );
+          } else {
+            setCompletedLevels([]);
+          }
+        } catch (error) {
+          console.error("Error loading level progress:", error);
+        }
+      };
+
+      loadProgress();
+
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
+
+  // A level is unlocked if it is the first level,
+  // already completed, or its previous level is completed.
+  const isLevelUnlocked = (levelNumber) => {
+    return (
+      levelNumber === 1 ||
+      completedLevels.includes(levelNumber) ||
+      completedLevels.includes(levelNumber - 1)
+    );
+  };
+
+  // Open the selected level.
   const handleLevelPress = (level) => {
-    if (level.number !== unlockedLevel) {
-      return;
-    }
+    if (!isLevelUnlocked(level.number)) return;
 
     navigation.navigate("Quiz", {
       level: level.number,
@@ -104,7 +155,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
     });
   };
 
-  // Avoid rendering an invalid difficulty.
+  // Handle invalid difficulty names.
   if (!config) {
     return (
       <View style={styles.container}>
@@ -114,6 +165,10 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
       </View>
     );
   }
+
+  const completedCount = levels.filter((level) =>
+    completedLevels.includes(level.number)
+  ).length;
 
   return (
     <ScrollView
@@ -142,7 +197,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
         </Text>
 
         <Text style={styles.subtitle}>
-          Complete each level with at least 75% to unlock
+          Complete each level with at least 65% to unlock
           the next challenge.
         </Text>
       </View>
@@ -179,7 +234,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
           </View>
 
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>75%</Text>
+            <Text style={styles.statNumber}>65%</Text>
             <Text style={styles.statLabel}>
               Passing Score
             </Text>
@@ -198,11 +253,11 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
         </Text>
       </View>
 
-      {/* Display levels for the selected difficulty only */}
+      {/* Level grid */}
       <View style={styles.levelGrid}>
         {levels.map((level) => {
-          const isUnlocked = level.number === unlockedLevel;
-          const isCompleted = false;
+          const isUnlocked = isLevelUnlocked(level.number);
+          const isCompleted = completedLevels.includes(level.number);
 
           return (
             <Pressable
@@ -217,7 +272,6 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
                 pressed && styles.pressedLevelCard,
               ]}
             >
-              {/* Level number or status icon */}
               <View
                 style={[
                   styles.levelNumberContainer,
@@ -276,7 +330,7 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
         })}
       </View>
 
-      {/* Unlock reminder */}
+      {/* Progress reminder */}
       <View style={styles.reminderCard}>
         <Text style={styles.reminderIcon}>🔒</Text>
 
@@ -286,8 +340,9 @@ export default function DifficultyLevelsScreen({ navigation, route }) {
           </Text>
 
           <Text style={styles.reminderDescription}>
-            Score at least 75% to pass a level. Passing
-            unlocks the next level in this difficulty.
+            You have completed {completedCount} of {levels.length} levels
+            in {difficulty}. Score at least 65% to pass a level and
+            unlock the next one.
           </Text>
         </View>
       </View>
@@ -406,7 +461,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Four-column responsive level grid.
   levelGrid: {
     flexDirection: "row",
     flexWrap: "wrap",

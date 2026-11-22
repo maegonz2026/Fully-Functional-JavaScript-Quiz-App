@@ -1,28 +1,18 @@
-import React, { useEffect, useRef } from "react";
 
+import React, { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
+  View, Text, StyleSheet, Pressable, ScrollView,
+  Modal, StatusBar,
 } from "react-native";
-
 import { SafeAreaView } from "react-native-safe-area-context";
-
 import {
-  getStoredData,
-  saveStoredData,
-  STORAGE_KEYS,
+  getStoredData, saveStoredData, STORAGE_KEYS,
 } from "../utils/storage";
 
-// Passing percentage required to complete a level.
 const PASSING_PERCENTAGE = 65;
-
-// AsyncStorage key for completed level progress.
 const LEVEL_PROGRESS_KEY = "@javascript_mastery:level_progress";
+const REWARD_STORAGE_KEY = "@javascript_mastery:perfect_level_rewards";
 
-// Valid level ranges for each difficulty.
 const DIFFICULTY_RANGES = {
   Easy: { start: 1, end: 20 },
   Medium: { start: 21, end: 35 },
@@ -30,65 +20,40 @@ const DIFFICULTY_RANGES = {
   Expert: { start: 46, end: 50 },
 };
 
+const DEFAULT_REWARD_DATA = {
+  perfectLevels: [],
+  rewardsGranted: 0,
+  inventory: { hint: 0, remove: 0 },
+  rewardHistory: [],
+};
+
 export default function ResultsScreen({ navigation, route }) {
-  // Receive the quiz result from QuizScreen.
-  const rawScore = Number(route.params?.score ?? 0);
-  const rawTotal = Number(route.params?.total ?? 0);
-
-  // Validate the score and total.
-  const total = Number.isFinite(rawTotal)
-    ? Math.max(0, Math.floor(rawTotal))
-    : 0;
-
-  const score = Number.isFinite(rawScore)
-    ? Math.min(total, Math.max(0, Math.floor(rawScore)))
-    : 0;
-
-  const level = route.params?.level ?? null;
-  const difficulty = route.params?.difficulty ?? null;
-
-  // Validate the selected difficulty and level.
-  const levelNumber = Number(level);
+  const total = Math.max(0, Math.floor(Number(route.params?.total) || 0));
+  const score = Math.min(total, Math.max(0, Math.floor(Number(route.params?.score) || 0)));
+  const levelNumber = Number(route.params?.level);
+  const difficulty = route.params?.difficulty;
   const difficultyRange = DIFFICULTY_RANGES[difficulty];
 
   const isLevelQuiz =
-    difficultyRange !== undefined &&
+    difficultyRange &&
     Number.isInteger(levelNumber) &&
     levelNumber >= difficultyRange.start &&
     levelNumber <= difficultyRange.end;
 
-  // Calculate the final percentage.
-  const percentage =
-    total > 0 ? Math.round((score / total) * 100) : 0;
-
-  // Calculate the minimum score required to pass.
-  const requiredScore =
-    total > 0
-      ? Math.ceil((total * PASSING_PERCENTAGE) / 100)
-      : 0;
-
-  // Determine whether the player passed.
+  const percentage = total ? Math.round((score / total) * 100) : 0;
+  const requiredScore = total ? Math.ceil(total * PASSING_PERCENTAGE / 100) : 0;
   const passed = total > 0 && score >= requiredScore;
+  const additionalCorrectAnswers = Math.max(0, requiredScore - score);
+  const isLastLevel = isLevelQuiz && levelNumber === difficultyRange.end;
 
-  // Calculate additional correct answers needed.
-  const additionalCorrectAnswers = Math.max(
-    0,
-    requiredScore - score
-  );
-
-  // Determine the final level in the current difficulty.
-  const isLastLevel =
-    isLevelQuiz &&
-    levelNumber === difficultyRange.end;
-
-  // Keep one result record for this screen instance.
   const resultRef = useRef(null);
-
-  // Prevent duplicate save operations.
   const savePromiseRef = useRef(null);
 
-  // Create the result record once.
-  if (resultRef.current === null) {
+  const [rewardPopup, setRewardPopup] = useState(null);
+  const [rewardData, setRewardData] = useState(DEFAULT_REWARD_DATA);
+  const [saving, setSaving] = useState(true);
+
+  if (!resultRef.current) {
     resultRef.current = {
       id: Date.now().toString(),
       score,
@@ -101,141 +66,128 @@ export default function ResultsScreen({ navigation, route }) {
     };
   }
 
-  // Save quiz history and level progress.
+  // Save quiz history, level progress, and any newly earned rewards.
   useEffect(() => {
     async function saveQuizResult() {
-      const result = resultRef.current;
-
-      // SAVE QUIZ HISTORY.
       try {
-        const previousResults = await getStoredData(
-          STORAGE_KEYS.QUIZ_HISTORY,
-          []
-        );
+        const result = resultRef.current;
 
-        const quizHistory = Array.isArray(previousResults)
-          ? previousResults
-          : [];
+        // Save quiz history without duplicating this result.
+        const previousResults = await getStoredData(STORAGE_KEYS.QUIZ_HISTORY, []);
+        const quizHistory = Array.isArray(previousResults) ? previousResults : [];
 
-        const alreadySaved = quizHistory.some(
-          (item) => item.id === result.id
-        );
-
-        if (!alreadySaved) {
-          await saveStoredData(
-            STORAGE_KEYS.QUIZ_HISTORY,
-            [...quizHistory, result]
-          );
+        if (!quizHistory.some((item) => item.id === result.id)) {
+          await saveStoredData(STORAGE_KEYS.QUIZ_HISTORY, [...quizHistory, result]);
         }
-      } catch (error) {
-        console.error("Error saving quiz history:", error);
-      }
 
-      // Only passed level quizzes update progression.
-      if (!isLevelQuiz || !passed) {
-        return;
-      }
-
-      // SAVE COMPLETED LEVEL PROGRESS.
-      try {
-        const previousProgress = await getStoredData(
-          LEVEL_PROGRESS_KEY,
-          {}
-        );
-
-        const progress =
-          previousProgress &&
-          typeof previousProgress === "object" &&
-          !Array.isArray(previousProgress)
+        // Record passed levels.
+        if (isLevelQuiz && passed) {
+          const previousProgress = await getStoredData(LEVEL_PROGRESS_KEY, {});
+          const progress = previousProgress && typeof previousProgress === "object" && !Array.isArray(previousProgress)
             ? previousProgress
             : {};
 
-        const storedLevels = Array.isArray(
-          progress.completedLevels
-        )
-          ? progress.completedLevels
-          : [];
-
-        // Remove invalid entries and duplicates.
-        const completedLevels = [
-          ...new Set(
-            storedLevels
+          const completedLevels = [...new Set(
+            (Array.isArray(progress.completedLevels) ? progress.completedLevels : [])
               .map(Number)
-              .filter(
-                (item) =>
-                  Number.isInteger(item) &&
-                  item >= 1 &&
-                  item <= 50
-              )
-          ),
-        ];
+              .filter((item) => Number.isInteger(item) && item >= 1 && item <= 50)
+          )];
 
-        // Add the level if it has not been completed.
-        if (!completedLevels.includes(levelNumber)) {
-          completedLevels.push(levelNumber);
-          completedLevels.sort((a, b) => a - b);
-
-          await saveStoredData(LEVEL_PROGRESS_KEY, {
-            ...progress,
-            completedLevels,
-          });
+          if (!completedLevels.includes(levelNumber)) {
+            completedLevels.push(levelNumber);
+            completedLevels.sort((a, b) => a - b);
+            await saveStoredData(LEVEL_PROGRESS_KEY, { ...progress, completedLevels });
+          }
         }
+
+        // Only a perfect level contributes to reward progress.
+        if (!isLevelQuiz || percentage !== 100 || total === 0) return;
+
+        const stored = await getStoredData(REWARD_STORAGE_KEY, DEFAULT_REWARD_DATA);
+        const current = {
+          ...DEFAULT_REWARD_DATA,
+          ...(stored || {}),
+          inventory: {
+            hint: Math.max(0, Number(stored?.inventory?.hint) || 0),
+            remove: Math.max(0, Number(stored?.inventory?.remove) || 0),
+          },
+        };
+
+        // Keep each perfect level unique.
+        const perfectLevels = [...new Set(
+          (Array.isArray(current.perfectLevels) ? current.perfectLevels : [])
+            .map(Number)
+            .filter((item) => Number.isInteger(item) && item >= 1 && item <= 50)
+        )];
+
+        if (!perfectLevels.includes(levelNumber)) {
+          perfectLevels.push(levelNumber);
+          perfectLevels.sort((a, b) => a - b);
+        }
+
+        // Every two different perfect levels grant one random reward.
+        const earnedPairs = Math.floor(perfectLevels.length / 2);
+        const rewardsGranted = Math.max(0, Number(current.rewardsGranted) || 0);
+        const newRewardsCount = Math.max(0, earnedPairs - rewardsGranted);
+        const inventory = { ...current.inventory };
+        const newRewards = [];
+
+        for (let i = 0; i < newRewardsCount; i++) {
+          const type = Math.random() < 0.5 ? "hint" : "remove";
+          inventory[type]++;
+          newRewards.push(type);
+        }
+
+        const updatedData = {
+          perfectLevels,
+          rewardsGranted: rewardsGranted + newRewardsCount,
+          inventory,
+          rewardHistory: [
+            ...(Array.isArray(current.rewardHistory) ? current.rewardHistory : []),
+            ...newRewards.map((type) => ({
+              type,
+              earnedAt: new Date().toISOString(),
+            })),
+          ],
+        };
+
+        await saveStoredData(REWARD_STORAGE_KEY, updatedData);
+        setRewardData(updatedData);
+
+        if (newRewards.length) setRewardPopup(newRewards);
       } catch (error) {
-        console.error("Error saving level progress:", error);
+        console.error("Error saving quiz result:", error);
+      } finally {
+        setSaving(false);
       }
     }
 
-    // Execute the save operation only once.
     if (!savePromiseRef.current) {
       savePromiseRef.current = saveQuizResult();
     }
-  }, [isLevelQuiz, passed, levelNumber]);
+  }, [isLevelQuiz, passed, percentage, total, levelNumber]);
 
-  // Restart the same level.
+  // Navigation actions.
   function tryAgain() {
-    if (isLevelQuiz) {
-      navigation.replace("Quiz", {
-        level: levelNumber,
-        difficulty,
-      });
-    } else {
-      navigation.replace("Quiz");
-    }
+    navigation.replace("Quiz", isLevelQuiz ? { level: levelNumber, difficulty } : undefined);
   }
 
-  // Proceed to the next level.
   function goToNextLevel() {
-    if (!isLevelQuiz || !passed || isLastLevel) {
-      return;
+    if (isLevelQuiz && passed && !isLastLevel) {
+      navigation.replace("Quiz", { level: levelNumber + 1, difficulty });
     }
-
-    navigation.replace("Quiz", {
-      level: levelNumber + 1,
-      difficulty,
-    });
   }
 
-  // Return to the difficulty levels screen.
   function goToLevels() {
-    if (isLevelQuiz) {
-      navigation.replace("DifficultyLevels", {
-        difficulty,
-      });
-    } else {
-      navigation.replace("Home");
-    }
+    navigation.replace(isLevelQuiz ? "DifficultyLevels" : "Home",
+      isLevelQuiz ? { difficulty } : undefined);
   }
 
-  // Return to the previous screen.
   function goBack() {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      goToLevels();
-    }
+    navigation.canGoBack() ? navigation.goBack() : goToLevels();
   }
 
-  // Display feedback based on the player's result.
+  // Result feedback message.
   function getResultMessage() {
     if (!isLevelQuiz) {
       return percentage >= 80
@@ -260,70 +212,38 @@ export default function ResultsScreen({ navigation, route }) {
     return `You answered ${score} out of ${total} questions correctly (${percentage}%). You needed at least ${requiredScore} correct answers to meet the ${PASSING_PERCENTAGE}% passing requirement. You needed ${additionalCorrectAnswers} more correct ${additionalCorrectAnswers === 1 ? "answer" : "answers"} to pass. Review the material and try again!`;
   }
 
+  const perfectLevelCount = rewardData.perfectLevels.length;
+  const remainingForReward = perfectLevelCount % 2 === 0 ? 2 : 1;
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* RESULT HEADER */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <View
-            style={[
-              styles.resultIcon,
-              passed ? styles.successIcon : styles.failedIcon,
-            ]}
-          >
-            <Text style={styles.resultIconText}>
-              {passed ? "✓" : "✕"}
-            </Text>
+          <View style={[styles.resultIcon, passed ? styles.successIcon : styles.failedIcon]}>
+            <Text style={styles.resultIconText}>{passed ? "✓" : "✕"}</Text>
           </View>
 
           <Text style={styles.title}>
-            {isLevelQuiz
-              ? passed
-                ? "Level Passed!"
-                : "Level Not Passed"
-              : "Quiz Complete!"}
+            {isLevelQuiz ? passed ? "Level Passed!" : "Level Not Passed" : "Quiz Complete!"}
           </Text>
 
           <Text style={styles.subtitle}>
-            {isLevelQuiz
-              ? `${difficulty} • Level ${levelNumber}`
-              : "Here is your final result."}
+            {isLevelQuiz ? `${difficulty} • Level ${levelNumber}` : "Here is your final result."}
           </Text>
         </View>
 
-        {/* SCORE CARD */}
         <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>
-            YOUR FINAL SCORE
-          </Text>
-
-          <Text
-            style={[
-              styles.percentage,
-              passed ? styles.successText : styles.failedText,
-            ]}
-          >
+          <Text style={styles.scoreLabel}>YOUR FINAL SCORE</Text>
+          <Text style={[styles.percentage, passed ? styles.successText : styles.failedText]}>
             {percentage}%
           </Text>
+          <Text style={styles.scoreDetails}>{score} correct out of {total} questions</Text>
 
-          <Text style={styles.scoreDetails}>
-            {score} correct out of {total} questions
-          </Text>
-
-          {/* PROGRESS BAR */}
           <View style={styles.progressBackground}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: `${Math.min(100, percentage)}%`,
-                  backgroundColor: passed ? "#16a34a" : "#ef4444",
-                },
-              ]}
-            />
+            <View style={[styles.progressFill, {
+              width: `${Math.min(100, percentage)}%`,
+              backgroundColor: passed ? "#16a34a" : "#ef4444",
+            }]} />
           </View>
 
           <View style={styles.progressLabels}>
@@ -332,105 +252,109 @@ export default function ResultsScreen({ navigation, route }) {
           </View>
 
           {isLevelQuiz && (
-            <View
-              style={[
-                styles.statusBadge,
-                passed ? styles.passedBadge : styles.failedBadge,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusText,
-                  passed ? styles.successText : styles.failedText,
-                ]}
-              >
+            <View style={[styles.statusBadge, passed ? styles.passedBadge : styles.failedBadge]}>
+              <Text style={[styles.statusText, passed ? styles.successText : styles.failedText]}>
                 {passed ? "✓ LEVEL PASSED" : "✕ LEVEL NOT PASSED"}
               </Text>
             </View>
           )}
         </View>
 
-        {/* FEEDBACK */}
-        <View
-          style={[
-            styles.feedbackCard,
-            passed ? styles.successFeedback : styles.failedFeedback,
-          ]}
-        >
-          <Text style={styles.feedbackTitle}>
-            {passed ? "Well Done!" : "Keep Practicing!"}
-          </Text>
+        {isLevelQuiz && percentage === 100 && (
+          <View style={styles.perfectCard}>
+            <Text style={styles.perfectTitle}>🌟 Perfect Level!</Text>
+            <Text style={styles.perfectMessage}>
+              This level has been counted toward your perfect-level rewards.
+              Every 2 different perfect levels earn you 1 random reward.
+            </Text>
+            <Text style={styles.perfectProgress}>
+              {saving ? "Checking your rewards..." : `${perfectLevelCount} perfect levels recorded`}
+            </Text>
+            {!saving && (
+              <Text style={styles.perfectRemaining}>
+                {remainingForReward} more perfect {remainingForReward === 1 ? "level" : "levels"} until your next reward.
+              </Text>
+            )}
+          </View>
+        )}
 
-          <Text style={styles.feedbackMessage}>
-            {getResultMessage()}
-          </Text>
+        <View style={[styles.feedbackCard, passed ? styles.successFeedback : styles.failedFeedback]}>
+          <Text style={styles.feedbackTitle}>{passed ? "Well Done!" : "Keep Practicing!"}</Text>
+          <Text style={styles.feedbackMessage}>{getResultMessage()}</Text>
         </View>
 
-        {/* ACTION BUTTONS */}
         <View style={styles.buttons}>
-          {/* NEXT LEVEL BUTTON: Only appears when passed. */}
           {isLevelQuiz && passed && !isLastLevel && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={goToNextLevel}
-            >
-              <Text style={styles.primaryText}>
-                Next Level →
-              </Text>
+            <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]} onPress={goToNextLevel}>
+              <Text style={styles.primaryText}>Next Level →</Text>
             </Pressable>
           )}
 
-          {/* FINAL DIFFICULTY BUTTON. */}
           {isLevelQuiz && passed && isLastLevel && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={goToLevels}
-            >
-              <Text style={styles.primaryText}>
-                View Difficulties →
-              </Text>
+            <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]} onPress={goToLevels}>
+              <Text style={styles.primaryText}>View Difficulties →</Text>
             </Pressable>
           )}
 
-          {/* TRY AGAIN: Only appears when failed. */}
           {(!isLevelQuiz || !passed) && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={tryAgain}
-            >
-              <Text style={styles.primaryText}>
-                ↻ Try Again
-              </Text>
+            <Pressable style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]} onPress={tryAgain}>
+              <Text style={styles.primaryText}>↻ Try Again</Text>
             </Pressable>
           )}
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={goBack}
-          >
-            <Text style={styles.secondaryText}>
-              ← Back
-            </Text>
+          <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]} onPress={goBack}>
+            <Text style={styles.secondaryText}>← Back</Text>
           </Pressable>
         </View>
       </ScrollView>
+
+      {/* Full-screen reward popup. */}
+      <Modal
+        visible={rewardPopup !== null}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        navigationBarTranslucent={true}
+        onRequestClose={() => setRewardPopup(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <StatusBar backgroundColor="transparent" translucent={true} barStyle="light-content" />
+
+          <SafeAreaView style={styles.modalSafeArea} edges={["top", "bottom", "left", "right"]}>
+            <View style={styles.rewardModal}>
+              <Text style={styles.rewardEmoji}>🎁</Text>
+              <Text style={styles.rewardTitle}>Perfect Level Reward!</Text>
+
+              <Text style={styles.rewardDescription}>
+                You earned {rewardPopup?.length || 0} new {rewardPopup?.length === 1 ? "reward" : "rewards"}!
+              </Text>
+
+              {rewardPopup?.map((reward, index) => (
+                <View key={`${reward}-${index}`} style={styles.rewardItem}>
+                  <Text style={styles.rewardItemIcon}>{reward === "hint" ? "💡" : "✂️"}</Text>
+                  <View style={styles.rewardItemTextContainer}>
+                    <Text style={styles.rewardItemTitle}>
+                      {reward === "hint" ? "1 Hint" : "1 Remove One Answer"}
+                    </Text>
+                    <Text style={styles.rewardItemSubtitle}>Added to your reward inventory</Text>
+                  </View>
+                </View>
+              ))}
+
+              <Pressable
+                style={({ pressed }) => [styles.rewardButton, pressed && styles.buttonPressed]}
+                onPress={() => setRewardPopup(null)}
+              >
+                <Text style={styles.rewardButtonText}>Awesome!</Text>
+              </Pressable>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-// STYLES
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -576,6 +500,41 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
   },
 
+  perfectCard: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderWidth: 1,
+    padding: 18,
+    borderRadius: 18,
+    marginTop: 18,
+  },
+
+  perfectTitle: {
+    color: "#1d4ed8",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+
+  perfectMessage: {
+    color: "#475569",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 7,
+  },
+
+  perfectProgress: {
+    color: "#1e40af",
+    fontWeight: "800",
+    fontSize: 13,
+    marginTop: 12,
+  },
+
+  perfectRemaining: {
+    color: "#64748b",
+    fontSize: 12,
+    marginTop: 5,
+  },
+
   feedbackCard: {
     padding: 18,
     borderRadius: 18,
@@ -644,5 +603,104 @@ const styles = StyleSheet.create({
   buttonPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.98 }],
+  },
+
+  modalOverlay: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    backgroundColor: "rgba(15, 23, 42, 0.82)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  modalSafeArea: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+
+  rewardModal: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#ffffff",
+    borderRadius: 25,
+    padding: 24,
+    alignItems: "center",
+    elevation: 15,
+    shadowColor: "#000000",
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+  },
+
+  rewardEmoji: {
+    fontSize: 54,
+    marginBottom: 12,
+  },
+
+  rewardTitle: {
+    color: "#172554",
+    fontSize: 22,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  rewardDescription: {
+    color: "#64748b",
+    fontSize: 14,
+    marginTop: 7,
+    marginBottom: 18,
+    textAlign: "center",
+  },
+
+  rewardItem: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 15,
+    padding: 14,
+    marginBottom: 10,
+  },
+
+  rewardItemIcon: {
+    fontSize: 27,
+    marginRight: 13,
+  },
+
+  rewardItemTextContainer: {
+    flex: 1,
+  },
+
+  rewardItemTitle: {
+    color: "#172554",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  rewardItemSubtitle: {
+    color: "#64748b",
+    fontSize: 11,
+    marginTop: 3,
+  },
+
+  rewardButton: {
+    backgroundColor: "#2563eb",
+    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 12,
+  },
+
+  rewardButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "900",
   },
 });

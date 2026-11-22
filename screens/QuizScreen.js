@@ -1,10 +1,5 @@
 
-import React, {
-  useEffect,
-  useCallback,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useCallback, useRef, useState } from "react";
 
 import {
   View,
@@ -16,22 +11,26 @@ import {
   BackHandler,
 } from "react-native";
 
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
-
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-
 import { useQuiz } from "../context/QuizContext";
 
+import {
+  getStoredData,
+  saveStoredData,
+} from "../utils/storage";
+
+const REWARD_STORAGE_KEY = "@javascript_mastery:perfect_level_rewards";
+
+const DEFAULT_INVENTORY = {
+  hint: 0,
+  remove: 0,
+};
+
 export default function QuizScreen({ navigation, route }) {
-  const insets = useSafeAreaInsets();
-
-  // Allows navigation only after confirmation or quiz completion.
   const allowNavigationRef = useRef(false);
+  const rewardUseLockRef = useRef(false);
 
-  // Receives the selected level and difficulty.
   const level = route.params?.level || 1;
   const difficulty = route.params?.difficulty || "Easy";
 
@@ -45,53 +44,61 @@ export default function QuizScreen({ navigation, route }) {
     nextQuestion,
   } = useQuiz();
 
-  // Tracks Remove and Hint usage for this level attempt.
-  const [removeUses, setRemoveUses] = useState(0);
-  const [hintUses, setHintUses] = useState(0);
-
-  // Stores the answer choices removed from the current question.
+  const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const [removedOptions, setRemovedOptions] = useState([]);
-
-  // Controls whether the current question's hint is visible.
   const [hintVisible, setHintVisible] = useState(false);
 
-  // Initializes the selected level's quiz.
+  // Load saved rewards and initialize the selected quiz.
   useEffect(() => {
-    allowNavigationRef.current = false;
+    let mounted = true;
 
-    setRemoveUses(0);
-    setHintUses(0);
-    setRemovedOptions([]);
-    setHintVisible(false);
+    async function initializeQuiz() {
+      allowNavigationRef.current = false;
+      setRemovedOptions([]);
+      setHintVisible(false);
+      setInventoryLoaded(false);
 
-    startQuiz(level, difficulty);
+      const storedRewards = await getStoredData(REWARD_STORAGE_KEY, {});
+      const savedInventory = storedRewards?.inventory || DEFAULT_INVENTORY;
+
+      if (mounted) {
+        setInventory({
+          hint: Math.max(0, Number(savedInventory.hint) || 0),
+          remove: Math.max(0, Number(savedInventory.remove) || 0),
+        });
+        setInventoryLoaded(true);
+      }
+
+      startQuiz(level, difficulty);
+    }
+
+    initializeQuiz();
+
+    return () => {
+      mounted = false;
+    };
   }, [startQuiz, level, difficulty]);
 
-  // Resets question-specific assistance when moving to another question.
+  // Reset question-specific assistance when moving to another question.
   useEffect(() => {
     setRemovedOptions([]);
     setHintVisible(false);
   }, [currentIndex]);
 
-  // Displays an exit confirmation.
+  // Confirm before leaving an unfinished quiz.
   const confirmExitQuiz = useCallback(() => {
     Alert.alert(
       "Exit Quiz?",
       "Are you sure you want to leave this quiz? Your current progress will be lost.",
       [
-        {
-          text: "Stay",
-          style: "cancel",
-        },
+        { text: "Stay", style: "cancel" },
         {
           text: "Exit Quiz",
           style: "destructive",
           onPress: () => {
             allowNavigationRef.current = true;
-
-            navigation.replace("DifficultyLevels", {
-              difficulty,
-            });
+            navigation.replace("DifficultyLevels", { difficulty });
           },
         },
       ],
@@ -99,7 +106,6 @@ export default function QuizScreen({ navigation, route }) {
     );
   }, [navigation, difficulty]);
 
-  // Handles the Android hardware Back button.
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
@@ -116,122 +122,94 @@ export default function QuizScreen({ navigation, route }) {
     }, [confirmExitQuiz])
   );
 
-  // Prevents leaving the quiz without confirmation.
   useEffect(() => {
-    const unsubscribe = navigation.addListener(
-      "beforeRemove",
-      (event) => {
-        if (allowNavigationRef.current) {
-          return;
-        }
-
-        event.preventDefault();
-        confirmExitQuiz();
-      }
-    );
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      if (allowNavigationRef.current) return;
+      event.preventDefault();
+      confirmExitQuiz();
+    });
 
     return unsubscribe;
   }, [navigation, confirmExitQuiz]);
 
-  // Displays a loading screen while questions are prepared.
-  if (quizQuestions.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingIcon}>📝</Text>
-
-          <Text style={styles.loadingText}>
-            Preparing Level {level}...
-          </Text>
-
-          <Text style={styles.loadingSubtitle}>
-            Getting your {difficulty} questions ready.
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Gets the currently displayed question.
-  const currentQuestion = quizQuestions[currentIndex];
-
-  if (!currentQuestion) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>
-            Preparing your question...
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Checks whether the selected answer is correct.
-  const isCorrect =
-    selectedAnswer !== null &&
-    selectedAnswer === currentQuestion.answer;
-
-  // Calculates question progress.
-  const progressPercentage =
-    ((currentIndex + 1) / quizQuestions.length) * 100;
-
-  // Removes one randomly selected incorrect option.
-  function handleRemoveOption() {
+  // Consume one saved reward and update persistent inventory.
+  async function consumeReward(rewardType) {
     if (
+      !inventoryLoaded ||
+      rewardUseLockRef.current ||
       selectedAnswer !== null ||
-      removeUses >= 3
-    ) {
-      return;
-    }
+      inventory[rewardType] <= 0
+    ) return false;
 
-    // Gets incorrect options that have not already been removed.
+    rewardUseLockRef.current = true;
+
+    try {
+      const storedRewards = await getStoredData(REWARD_STORAGE_KEY, {});
+      const currentInventory = {
+        hint: Math.max(0, Number(storedRewards?.inventory?.hint) || 0),
+        remove: Math.max(0, Number(storedRewards?.inventory?.remove) || 0),
+      };
+
+      if (currentInventory[rewardType] <= 0) {
+        setInventory(currentInventory);
+        return false;
+      }
+
+      const updatedInventory = {
+        ...currentInventory,
+        [rewardType]: currentInventory[rewardType] - 1,
+      };
+
+      await saveStoredData(REWARD_STORAGE_KEY, {
+        ...storedRewards,
+        inventory: updatedInventory,
+      });
+
+      setInventory(updatedInventory);
+      return true;
+    } catch (error) {
+      console.error("Error using reward:", error);
+      return false;
+    } finally {
+      rewardUseLockRef.current = false;
+    }
+  }
+
+  // Remove one incorrect answer using an earned reward.
+  async function handleRemoveOption() {
+    if (selectedAnswer !== null || inventory.remove <= 0) return;
+
     const removableOptions = currentQuestion.options.filter(
       (option) =>
         option !== currentQuestion.answer &&
         !removedOptions.includes(option)
     );
 
-    if (removableOptions.length === 0) {
-      return;
-    }
+    if (!removableOptions.length) return;
 
-    // Randomly chooses one incorrect option.
-    const randomIndex = Math.floor(
-      Math.random() * removableOptions.length
-    );
+    if (!(await consumeReward("remove"))) return;
 
+    const randomIndex = Math.floor(Math.random() * removableOptions.length);
     const optionToRemove = removableOptions[randomIndex];
 
-    setRemovedOptions((previous) => [
-      ...previous,
-      optionToRemove,
-    ]);
-
-    setRemoveUses((previous) => previous + 1);
+    setRemovedOptions((previous) => [...previous, optionToRemove]);
   }
 
-  // Displays a hint once per level attempt.
-  function handleShowHint() {
-    if (
-      selectedAnswer !== null ||
-      hintUses >= 1 ||
-      hintVisible
-    ) {
-      return;
+  // Reveal a question hint using an earned reward.
+  async function handleShowHint() {
+    if (selectedAnswer !== null || inventory.hint <= 0 || hintVisible) return;
+
+    if (await consumeReward("hint")) {
+      setHintVisible(true);
     }
-
-    setHintUses((previous) => previous + 1);
-    setHintVisible(true);
   }
 
-  // Moves to the next question or displays the results.
+  // Move to the next question or open the results screen.
   function handleNextQuestion() {
     const result = nextQuestion();
 
     if (result?.finished) {
       allowNavigationRef.current = true;
-
       navigation.replace("Results", {
         score: result.score,
         total: result.total,
@@ -241,32 +219,53 @@ export default function QuizScreen({ navigation, route }) {
     }
   }
 
-  // Uses the question's hint property when available.
+  if (quizQuestions.length === 0) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingIcon}>📝</Text>
+        <Text style={styles.loadingText}>Preparing Level {level}...</Text>
+        <Text style={styles.loadingSubtitle}>
+          Getting your {difficulty} questions ready.
+        </Text>
+      </View>
+    );
+  }
+
+  const currentQuestion = quizQuestions[currentIndex];
+
+  if (!currentQuestion) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Preparing your question...</Text>
+      </View>
+    );
+  }
+
+  const isCorrect =
+    selectedAnswer !== null &&
+    selectedAnswer === currentQuestion.answer;
+
+  const progressPercentage =
+    ((currentIndex + 1) / quizQuestions.length) * 100;
+
   const hintText =
     currentQuestion.hint ||
     "Think carefully about the JavaScript concept in the question. Review what each option does before choosing.";
 
   return (
-    <SafeAreaView style={styles.container}>
+    // edges removes the extra top inset while preserving bottom spacing.
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingBottom: Math.max(insets.bottom, 20) + 20,
-          },
-        ]}
+        contentContainerStyle={styles.scrollContent}
       >
-        {/* LEVEL INFORMATION */}
+        {/* Level information and question progress. */}
         <View style={styles.levelHeader}>
           <View>
             <Text style={styles.difficultyLabel}>
               {difficulty.toUpperCase()} DIFFICULTY
             </Text>
-
-            <Text style={styles.levelTitle}>
-              Level {level}
-            </Text>
+            <Text style={styles.levelTitle}>Level {level}</Text>
           </View>
 
           <View style={styles.questionCountBadge}>
@@ -276,18 +275,13 @@ export default function QuizScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* QUESTION PROGRESS AND SCORE */}
         <View style={styles.progressContainer}>
           <Text style={styles.progress}>
             Question {currentIndex + 1} of {quizQuestions.length}
           </Text>
-
-          <Text style={styles.score}>
-            Score: {score}
-          </Text>
+          <Text style={styles.score}>Score: {score}</Text>
         </View>
 
-        {/* PROGRESS BAR */}
         <View style={styles.progressBar}>
           <View
             style={[
@@ -297,45 +291,42 @@ export default function QuizScreen({ navigation, route }) {
           />
         </View>
 
-        {/* QUESTION CARD */}
+        {/* Current question. */}
         <View style={styles.card}>
-          <Text style={styles.questionNumber}>
-            JAVASCRIPT QUESTION
-          </Text>
+          <Text style={styles.questionNumber}>JAVASCRIPT QUESTION</Text>
+          <Text style={styles.question}>{currentQuestion.question}</Text>
+        </View>
 
-          <Text style={styles.question}>
-            {currentQuestion.question}
+        {/* Earned hint and remove-answer rewards. */}
+        <View style={styles.inventoryHeader}>
+          <Text style={styles.inventoryTitle}>Your Rewards</Text>
+          <Text style={styles.inventorySubtitle}>
+            Earn rewards by getting perfect scores.
           </Text>
         </View>
 
-        {/* REMOVE AND HINT BUTTONS */}
         <View style={styles.assistanceContainer}>
           <Pressable
             style={({ pressed }) => [
               styles.assistanceButton,
               styles.removeButton,
-              (removeUses >= 3 || selectedAnswer !== null) &&
+              (inventory.remove <= 0 || selectedAnswer !== null || !inventoryLoaded) &&
                 styles.assistanceDisabled,
-              pressed &&
-                removeUses < 3 &&
-                selectedAnswer === null &&
+              pressed && inventory.remove > 0 && selectedAnswer === null &&
                 styles.buttonPressed,
             ]}
             onPress={handleRemoveOption}
             disabled={
-              removeUses >= 3 ||
-              selectedAnswer !== null
+              inventory.remove <= 0 ||
+              selectedAnswer !== null ||
+              !inventoryLoaded
             }
           >
             <Text style={styles.assistanceIcon}>✂️</Text>
-
             <View style={styles.assistanceTextContainer}>
-              <Text style={styles.assistanceTitle}>
-                Remove
-              </Text>
-
+              <Text style={styles.assistanceTitle}>Remove</Text>
               <Text style={styles.assistanceSubtitle}>
-                {3 - removeUses} uses left
+                {inventoryLoaded ? `${inventory.remove} available` : "Loading..."}
               </Text>
             </View>
           </Pressable>
@@ -344,81 +335,51 @@ export default function QuizScreen({ navigation, route }) {
             style={({ pressed }) => [
               styles.assistanceButton,
               styles.hintButton,
-              (hintUses >= 1 || selectedAnswer !== null) &&
-                styles.assistanceDisabled,
-              pressed &&
-                hintUses < 1 &&
-                selectedAnswer === null &&
+              (inventory.hint <= 0 || selectedAnswer !== null ||
+                !inventoryLoaded || hintVisible) && styles.assistanceDisabled,
+              pressed && inventory.hint > 0 && selectedAnswer === null &&
                 styles.buttonPressed,
             ]}
             onPress={handleShowHint}
             disabled={
-              hintUses >= 1 ||
-              selectedAnswer !== null
+              inventory.hint <= 0 ||
+              selectedAnswer !== null ||
+              !inventoryLoaded ||
+              hintVisible
             }
           >
             <Text style={styles.assistanceIcon}>💡</Text>
-
             <View style={styles.assistanceTextContainer}>
-              <Text style={styles.assistanceTitle}>
-                Hint
-              </Text>
-
+              <Text style={styles.assistanceTitle}>Hint</Text>
               <Text style={styles.assistanceSubtitle}>
-                {1 - hintUses} use left
+                {inventoryLoaded ? `${inventory.hint} available` : "Loading..."}
               </Text>
             </View>
           </Pressable>
         </View>
 
-        {/* HINT DISPLAY */}
         {hintVisible && (
           <View style={styles.hintContainer}>
-            <Text style={styles.hintTitle}>
-              💡 Helpful Hint
-            </Text>
-
-            <Text style={styles.hintText}>
-              {hintText}
-            </Text>
+            <Text style={styles.hintTitle}>💡 Helpful Hint</Text>
+            <Text style={styles.hintText}>{hintText}</Text>
           </View>
         )}
 
-        {/* ANSWER OPTIONS */}
+        {/* Answer choices. */}
         <View style={styles.answers}>
           {currentQuestion.options.map((option, index) => {
             const isSelected = selectedAnswer === option;
-            const isRemoved = removedOptions.includes(option);
-
-            // Hides options removed using the Remove button.
-            if (isRemoved) {
-              return null;
-            }
+            if (removedOptions.includes(option)) return null;
 
             let buttonStyle = styles.answerButton;
             let textStyle = styles.answerText;
 
-            // Highlights only the user's selected answer.
             if (isSelected && isCorrect) {
-              buttonStyle = [
-                styles.answerButton,
-                styles.correct,
-              ];
-
-              textStyle = [
-                styles.answerText,
-                styles.correctText,
-              ];
+              buttonStyle = [styles.answerButton, styles.correct];
+              textStyle = [styles.answerText, styles.correctText];
             } else if (isSelected && !isCorrect) {
-              buttonStyle = [
-                styles.answerButton,
-                styles.wrong,
-              ];
-
-              textStyle = [
-                styles.answerText,
-                styles.wrongText,
-              ];
+              buttonStyle = [styles.answerButton, styles.wrong];
+              textStyle = [styles.answerText, styles.wrongText];
             }
 
             return (
@@ -426,43 +387,34 @@ export default function QuizScreen({ navigation, route }) {
                 key={`${currentQuestion.id}-${index}`}
                 style={({ pressed }) => [
                   buttonStyle,
-                  pressed &&
-                    selectedAnswer === null &&
-                    styles.answerPressed,
+                  pressed && selectedAnswer === null && styles.answerPressed,
                 ]}
                 onPress={() => selectAnswer(option)}
                 disabled={selectedAnswer !== null}
               >
-                <Text style={textStyle}>
-                  {option}
-                </Text>
+                <Text style={textStyle}>{option}</Text>
               </Pressable>
             );
           })}
         </View>
 
-        {/* ANSWER FEEDBACK */}
+        {/* Show explanation only when the selected answer is correct. */}
         {selectedAnswer !== null && (
           <View
             style={[
               styles.feedback,
-              isCorrect
-                ? styles.correctFeedbackBox
-                : styles.wrongFeedbackBox,
+              isCorrect ? styles.correctFeedbackBox : styles.wrongFeedbackBox,
             ]}
           >
             <Text
               style={[
                 styles.feedbackTitle,
-                isCorrect
-                  ? styles.correctFeedbackTitle
-                  : styles.wrongFeedbackTitle,
+                isCorrect ? styles.correctFeedbackTitle : styles.wrongFeedbackTitle,
               ]}
             >
               {isCorrect ? "✓ Correct!" : "✕ Incorrect!"}
             </Text>
 
-            {/* Shows explanation only when the answer is correct. */}
             {isCorrect && (
               <Text style={styles.feedbackText}>
                 {currentQuestion.explanation}
@@ -471,14 +423,11 @@ export default function QuizScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* NEXT QUESTION BUTTON */}
         <Pressable
           style={({ pressed }) => [
             styles.nextButton,
             selectedAnswer === null && styles.disabled,
-            pressed &&
-              selectedAnswer !== null &&
-              styles.nextPressed,
+            pressed && selectedAnswer !== null && styles.nextPressed,
           ]}
           disabled={selectedAnswer === null}
           onPress={handleNextQuestion}
@@ -494,7 +443,6 @@ export default function QuizScreen({ navigation, route }) {
   );
 }
 
-// Styles for the quiz screen.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -510,6 +458,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    backgroundColor: "#F8FAFC",
   },
 
   loadingIcon: {
@@ -619,10 +568,26 @@ const styles = StyleSheet.create({
     lineHeight: 34,
   },
 
+  inventoryHeader: {
+    marginTop: 22,
+    marginBottom: 10,
+  },
+
+  inventoryTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#172554",
+  },
+
+  inventorySubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 3,
+  },
+
   assistanceContainer: {
     flexDirection: "row",
     gap: 12,
-    marginTop: 18,
   },
 
   assistanceButton: {
@@ -646,7 +611,7 @@ const styles = StyleSheet.create({
   },
 
   assistanceDisabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
 
   buttonPressed: {

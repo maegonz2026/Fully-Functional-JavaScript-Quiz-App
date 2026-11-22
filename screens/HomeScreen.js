@@ -162,7 +162,7 @@ export default function HomeScreen({ navigation }) {
               styles.quizButton,
               pressed && styles.buttonPressed,
             ]}
-            onPress={() => navigation.navigate("Quiz")}
+            onPress={() => navigation.navigate("Difficulty")}
           >
             <Text style={styles.quizText}>Start Quiz</Text>
           </Pressable>

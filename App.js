@@ -10,6 +10,7 @@ import FlashcardScreen from "./screens/FlashcardScreen";
 import QuizScreen from "./screens/QuizScreen";
 import ResultsScreen from "./screens/ResultsScreen";
 import HistoryScreen from "./screens/HistoryScreen";
+import DifficultyScreen from "./screens/DifficultyScreen";
 
 // Imports the provider for shared quiz state.
 import { QuizProvider } from "./context/QuizContext";
@@ -107,6 +108,13 @@ export default function App() {
             }}
           />
 
+          <Stack.Screen
+            name="Difficulty"
+            component={DifficultyScreen}
+            options={{ 
+              title: "Choose Difficulty"
+             }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </QuizProvider>

@@ -1,4 +1,5 @@
-import React from "react";
+
+import React, { useCallback, useState } from "react";
 
 import {
   View,
@@ -8,143 +9,245 @@ import {
   Pressable,
 } from "react-native";
 
-// Existing study deck data.
-// API fetching will be implemented in Step 2.
+import { useFocusEffect } from "@react-navigation/native";
+import { getStoredData } from "../utils/storage";
+
+export const FLASHCARD_PROGRESS_KEY =
+  "@javascript_mastery:flashcard_progress";
+
+const createQuestionIds = (start, end) =>
+  Array.from(
+    { length: end - start + 1 },
+    (_, index) => String(start + index)
+  );
+
 const decks = [
   {
-    id: "1",
-    title: "JavaScript Basics",
-    description: "Variables, types, and operators",
-    count: "10 cards",
-    questionIds: [
-      "1", "2", "7", "8", "9",
-      "10", "11", "12", "13", "32"
-    ],
+    id: "easy",
+    title: "Easy",
+    description: "Learn JavaScript fundamentals.",
+    icon: "🌱",
+    color: "#16a34a",
+    questionIds: createQuestionIds(1, 70),
   },
   {
-    id: "2",
-    title: "Functions",
-    description: "Functions, parameters, and return values",
-    count: "8 cards",
-    questionIds: [
-      "10", "17", "18", "20",
-      "23", "26", "27", "28"
-    ],
+    id: "medium",
+    title: "Medium",
+    description: "Practice intermediate JavaScript concepts.",
+    icon: "📘",
+    color: "#2563eb",
+    questionIds: createQuestionIds(71, 140),
   },
   {
-    id: "3",
-    title: "Arrays",
-    description: "Array methods and manipulation",
-    count: "8 cards",
-    questionIds: [
-      "3", "4", "5", "6",
-      "14", "15", "16", "30"
-    ],
+    id: "hard",
+    title: "Hard",
+    description: "Challenge your JavaScript knowledge.",
+    icon: "🔥",
+    color: "#ea580c",
+    questionIds: createQuestionIds(141, 200),
   },
   {
-    id: "4",
-    title: "Modern JavaScript",
-    description: "ES6+, promises, async and await",
-    count: "9 cards",
-    questionIds: [
-      "17", "24", "25", "27", "28",
-      "29", "31", "33", "35"
-    ],
+    id: "expert",
+    title: "Expert",
+    description: "Master advanced JavaScript concepts.",
+    icon: "🏆",
+    color: "#9333ea",
+    questionIds: createQuestionIds(201, 250),
   },
 ];
 
 export default function DecksScreen({ navigation }) {
+  const [progress, setProgress] = useState({});
 
-  // Opens the Flashcards screen and passes the selected deck.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      async function loadProgress() {
+        const saved = await getStoredData(
+          FLASHCARD_PROGRESS_KEY,
+          {}
+        );
+
+        if (active) {
+          setProgress(saved || {});
+        }
+      }
+
+      loadProgress();
+
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
   function openDeck(deck) {
-    navigation.navigate("Flashcards", {
-      deck: deck,
-    });
+    navigation.navigate("Flashcards", { deck });
+  }
+
+  function renderDeck({ item }) {
+    const saved = progress[item.id] || {};
+
+    const mastered = Array.isArray(saved.mastered)
+      ? saved.mastered
+      : [];
+
+    const total = item.questionIds.length;
+
+    const masteredCount = item.questionIds.filter((id) =>
+      mastered.includes(id)
+    ).length;
+
+    const percentage = Math.round(
+      (masteredCount / total) * 100
+    );
+
+    return (
+      <Pressable
+        style={({ pressed }) => [
+          styles.card,
+          pressed && styles.cardPressed,
+        ]}
+        onPress={() => openDeck(item)}
+      >
+        <View style={styles.cardHeader}>
+          <View
+            style={[
+              styles.iconContainer,
+              { backgroundColor: item.color + "18" },
+            ]}
+          >
+            <Text style={styles.icon}>{item.icon}</Text>
+          </View>
+
+          <View style={styles.cardContent}>
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={styles.cardDescription}>
+              {item.description}
+            </Text>
+          </View>
+
+          <Text style={styles.arrow}>›</Text>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <Text style={styles.count}>{total} cards</Text>
+          <Text style={styles.mastered}>
+            {masteredCount}/{total} mastered
+          </Text>
+        </View>
+
+        <View style={styles.progressBackground}>
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width: `${percentage}%`,
+                backgroundColor: item.color,
+              },
+            ]}
+          />
+        </View>
+
+        <Text style={styles.percentage}>
+          {percentage}% completed
+        </Text>
+      </Pressable>
+    );
+  }
+
+  function renderHeader() {
+    return (
+      <View style={styles.top}>
+        <Text style={styles.title}>Study Decks</Text>
+        <Text style={styles.subtitle}>
+          Choose a difficulty and improve your JavaScript knowledge.
+        </Text>
+      </View>
+    );
   }
 
   return (
     <View style={styles.container}>
-
-      {/* SCREEN INTRODUCTION */}
-      <View style={styles.top}>
-        <Text style={styles.title}>Study Decks</Text>
-
-        <Text style={styles.subtitle}>
-          Choose a topic to start studying.
-        </Text>
-      </View>
-
-      {/* FLATLIST: Efficiently renders the available study decks. */}
       <FlatList
         data={decks}
         keyExtractor={(item) => item.id}
+        renderItem={renderDeck}
+        ListHeaderComponent={renderHeader}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.card}
-            onPress={() => openDeck(item)}
-          >
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>
-                {item.title}
-              </Text>
-
-              <Text style={styles.cardDescription}>
-                {item.description}
-              </Text>
-
-              <Text style={styles.count}>
-                {item.count}
-              </Text>
-            </View>
-
-            <Text style={styles.arrow}>›</Text>
-          </Pressable>
-        )}
+        keyboardShouldPersistTaps="handled"
       />
     </View>
   );
 }
 
-// STYLES: Controls the appearance of the deck list and deck cards.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
-    padding: 20,
-  },
-
-  top: {
-    marginBottom: 15,
-  },
-
-  title: {
-    fontSize: 30,
-    fontWeight: "900",
-    color: "#172554",
-  },
-
-  subtitle: {
-    color: "#64748b",
-    marginTop: 5,
-    fontSize: 15,
+    backgroundColor: "#F8FAFC",
   },
 
   list: {
-    gap: 12,
-    paddingBottom: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 65,
+    gap: 15,
+  },
+
+  top: {
+    marginBottom: 10,
+  },
+
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 8,
+  },
+
+  subtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#64748B",
   },
 
   card: {
-    backgroundColor: "#ffffff",
-    borderRadius: 18,
-    padding: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+  },
+
+  cardPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.99 }],
+  },
+
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+    marginBottom: 18,
+  },
+
+  iconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 15,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+
+  icon: {
+    fontSize: 25,
   },
 
   cardContent: {
@@ -152,25 +255,60 @@ const styles = StyleSheet.create({
   },
 
   cardTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: "800",
-    color: "#172554",
+    color: "#0F172A",
+    marginBottom: 5,
   },
 
   cardDescription: {
-    color: "#64748b",
-    marginTop: 5,
-  },
-
-  count: {
-    color: "#2563eb",
-    fontWeight: "700",
-    marginTop: 10,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#64748B",
   },
 
   arrow: {
-    fontSize: 35,
-    color: "#94a3b8",
-    marginLeft: 10,
+    fontSize: 28,
+    color: "#94A3B8",
+    marginLeft: 8,
+  },
+
+  cardFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  count: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+
+  mastered: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+  },
+
+  progressBackground: {
+    height: 7,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+
+  progressFill: {
+    height: "100%",
+    borderRadius: 10,
+  },
+
+  percentage: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#64748B",
+    textAlign: "right",
+    marginTop: 8,
   },
 });

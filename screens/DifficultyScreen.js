@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  Alert,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -153,11 +154,28 @@ export default function DifficultyScreen({ navigation }) {
     };
   };
 
-  // Open the selected difficulty if it is unlocked.
+  // Open unlocked difficulties or show a warning for locked ones.
   const openDifficulty = (difficulty) => {
     const { isUnlocked } = getDifficultyStatus(difficulty);
 
-    if (!isUnlocked) return;
+    if (!isUnlocked) {
+      const previousDifficulty = DIFFICULTIES.find(
+        (item) => item.levelEnd === difficulty.levelStart - 1
+      );
+
+      Alert.alert(
+        "🔒 Difficulty Locked",
+        `You need to complete all ${previousDifficulty.name} levels (Levels ${previousDifficulty.levelStart}–${previousDifficulty.levelEnd}) before unlocking ${difficulty.name} difficulty.\n\nKeep practicing and complete every level to unlock the next challenge!`,
+        [
+          {
+            text: "Got it",
+            style: "default",
+          },
+        ]
+      );
+
+      return;
+    }
 
     navigation.navigate("DifficultyLevels", {
       difficulty: difficulty.name,
@@ -173,7 +191,6 @@ export default function DifficultyScreen({ navigation }) {
       ]}
       showsVerticalScrollIndicator={false}
     >
-
       {/* Overall learning journey */}
       <View style={styles.overviewCard}>
         <View style={styles.overviewTop}>
@@ -227,11 +244,10 @@ export default function DifficultyScreen({ navigation }) {
           <Pressable
             key={difficulty.name}
             onPress={() => openDifficulty(difficulty)}
-            disabled={!isUnlocked}
             style={({ pressed }) => [
               styles.difficultyCard,
               !isUnlocked && styles.lockedCard,
-              pressed && isUnlocked && styles.pressedCard,
+              pressed && styles.pressedCard,
             ]}
           >
             {/* Difficulty icon */}

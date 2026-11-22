@@ -189,17 +189,6 @@ export default function HomeScreen({ navigation }) {
           </Pressable>
         </View>
 
-        {/* INFORMATION CARD: Explains the quiz content. */}
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>
-            10 Random JavaScript Questions
-          </Text>
-
-          <Text style={styles.infoText}>
-            Test your knowledge of JavaScript fundamentals and modern concepts.
-          </Text>
-        </View>
-
         {/* DAILY MOTIVATION: Displays a quote retrieved from an API. */}
         <View style={styles.quoteCard}>
           <Text style={styles.quoteLabel}>
@@ -308,8 +297,8 @@ const styles = StyleSheet.create({
   },
 
   menu: {
-    gap: 14,
-    marginTop: 25,
+    gap: 20,
+    marginTop: 40,
   },
 
   quizButton: {
@@ -358,36 +347,16 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
 
-  infoCard: {
-    backgroundColor: "#eff6ff",
-    padding: 20,
-    borderRadius: 18,
-    marginTop: 25,
-  },
-
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#172554",
-  },
-
-  infoText: {
-    color: "#64748b",
-    marginTop: 5,
-    lineHeight: 21,
-  },
-
   quoteCard: {
     backgroundColor: "#172554",
     padding: 20,
     borderRadius: 20,
-    marginTop: 25,
-    marginBottom: 25,
+    marginTop: 40,
   },
 
   quoteLabel: {
     color: "#ffffff",
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "900",
     letterSpacing: 1,
   },

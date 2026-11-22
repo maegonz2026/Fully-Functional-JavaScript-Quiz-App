@@ -1,4 +1,10 @@
-import React, { useEffect, useCallback } from "react";
+
+import React, {
+  useEffect,
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 
 import {
   View,
@@ -19,19 +25,13 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import { useQuiz } from "../context/QuizContext";
 
-// Determines the number of questions for each level.
-const getLevelQuestionCount = (level) => {
-  if (level <= 10) return 3;
-  if (level <= 25) return 4;
-  if (level <= 35) return 5;
-  if (level <= 45) return 6;
-  return 10;
-};
-
 export default function QuizScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
-  // Receive the selected level and difficulty.
+  // Allows navigation only after confirmation or quiz completion.
+  const allowNavigationRef = useRef(false);
+
+  // Receives the selected level and difficulty.
   const level = route.params?.level || 1;
   const difficulty = route.params?.difficulty || "Easy";
 
@@ -45,12 +45,35 @@ export default function QuizScreen({ navigation, route }) {
     nextQuestion,
   } = useQuiz();
 
-  // Initialize the selected level's quiz.
+  // Tracks Remove and Hint usage for this level attempt.
+  const [removeUses, setRemoveUses] = useState(0);
+  const [hintUses, setHintUses] = useState(0);
+
+  // Stores the answer choices removed from the current question.
+  const [removedOptions, setRemovedOptions] = useState([]);
+
+  // Controls whether the current question's hint is visible.
+  const [hintVisible, setHintVisible] = useState(false);
+
+  // Initializes the selected level's quiz.
   useEffect(() => {
+    allowNavigationRef.current = false;
+
+    setRemoveUses(0);
+    setHintUses(0);
+    setRemovedOptions([]);
+    setHintVisible(false);
+
     startQuiz(level, difficulty);
   }, [startQuiz, level, difficulty]);
 
-  // Shows a confirmation before leaving the current quiz.
+  // Resets question-specific assistance when moving to another question.
+  useEffect(() => {
+    setRemovedOptions([]);
+    setHintVisible(false);
+  }, [currentIndex]);
+
+  // Displays an exit confirmation.
   const confirmExitQuiz = useCallback(() => {
     Alert.alert(
       "Exit Quiz?",
@@ -64,6 +87,8 @@ export default function QuizScreen({ navigation, route }) {
           text: "Exit Quiz",
           style: "destructive",
           onPress: () => {
+            allowNavigationRef.current = true;
+
             navigation.replace("DifficultyLevels", {
               difficulty,
             });
@@ -74,7 +99,7 @@ export default function QuizScreen({ navigation, route }) {
     );
   }, [navigation, difficulty]);
 
-  // Handles the Android hardware back button.
+  // Handles the Android hardware Back button.
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
@@ -91,21 +116,16 @@ export default function QuizScreen({ navigation, route }) {
     }, [confirmExitQuiz])
   );
 
-  // Prevents navigation away from the quiz without confirmation.
+  // Prevents leaving the quiz without confirmation.
   useEffect(() => {
     const unsubscribe = navigation.addListener(
       "beforeRemove",
       (event) => {
-        // Allow navigation when the quiz has been completed.
-        if (event.data.action.type === "REPLACE" &&
-            event.data.action.payload?.name === "Results") {
+        if (allowNavigationRef.current) {
           return;
         }
 
-        // Prevent the default navigation action.
         event.preventDefault();
-
-        // Ask the user whether they want to leave.
         confirmExitQuiz();
       }
     );
@@ -113,7 +133,7 @@ export default function QuizScreen({ navigation, route }) {
     return unsubscribe;
   }, [navigation, confirmExitQuiz]);
 
-  // Show a loading screen while questions are being prepared.
+  // Displays a loading screen while questions are prepared.
   if (quizQuestions.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
@@ -132,18 +152,86 @@ export default function QuizScreen({ navigation, route }) {
     );
   }
 
-  // Get the currently displayed question.
+  // Gets the currently displayed question.
   const currentQuestion = quizQuestions[currentIndex];
 
-  // Calculate question progress.
+  if (!currentQuestion) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>
+            Preparing your question...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Checks whether the selected answer is correct.
+  const isCorrect =
+    selectedAnswer !== null &&
+    selectedAnswer === currentQuestion.answer;
+
+  // Calculates question progress.
   const progressPercentage =
     ((currentIndex + 1) / quizQuestions.length) * 100;
 
-  // Move to the next question or show the results.
+  // Removes one randomly selected incorrect option.
+  function handleRemoveOption() {
+    if (
+      selectedAnswer !== null ||
+      removeUses >= 3
+    ) {
+      return;
+    }
+
+    // Gets incorrect options that have not already been removed.
+    const removableOptions = currentQuestion.options.filter(
+      (option) =>
+        option !== currentQuestion.answer &&
+        !removedOptions.includes(option)
+    );
+
+    if (removableOptions.length === 0) {
+      return;
+    }
+
+    // Randomly chooses one incorrect option.
+    const randomIndex = Math.floor(
+      Math.random() * removableOptions.length
+    );
+
+    const optionToRemove = removableOptions[randomIndex];
+
+    setRemovedOptions((previous) => [
+      ...previous,
+      optionToRemove,
+    ]);
+
+    setRemoveUses((previous) => previous + 1);
+  }
+
+  // Displays a hint once per level attempt.
+  function handleShowHint() {
+    if (
+      selectedAnswer !== null ||
+      hintUses >= 1 ||
+      hintVisible
+    ) {
+      return;
+    }
+
+    setHintUses((previous) => previous + 1);
+    setHintVisible(true);
+  }
+
+  // Moves to the next question or displays the results.
   function handleNextQuestion() {
     const result = nextQuestion();
 
     if (result?.finished) {
+      allowNavigationRef.current = true;
+
       navigation.replace("Results", {
         score: result.score,
         total: result.total,
@@ -152,6 +240,11 @@ export default function QuizScreen({ navigation, route }) {
       });
     }
   }
+
+  // Uses the question's hint property when available.
+  const hintText =
+    currentQuestion.hint ||
+    "Think carefully about the JavaScript concept in the question. Review what each option does before choosing.";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -199,9 +292,7 @@ export default function QuizScreen({ navigation, route }) {
           <View
             style={[
               styles.progressFill,
-              {
-                width: `${progressPercentage}%`,
-              },
+              { width: `${progressPercentage}%` },
             ]}
           />
         </View>
@@ -217,17 +308,98 @@ export default function QuizScreen({ navigation, route }) {
           </Text>
         </View>
 
+        {/* REMOVE AND HINT BUTTONS */}
+        <View style={styles.assistanceContainer}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.assistanceButton,
+              styles.removeButton,
+              (removeUses >= 3 || selectedAnswer !== null) &&
+                styles.assistanceDisabled,
+              pressed &&
+                removeUses < 3 &&
+                selectedAnswer === null &&
+                styles.buttonPressed,
+            ]}
+            onPress={handleRemoveOption}
+            disabled={
+              removeUses >= 3 ||
+              selectedAnswer !== null
+            }
+          >
+            <Text style={styles.assistanceIcon}>✂️</Text>
+
+            <View style={styles.assistanceTextContainer}>
+              <Text style={styles.assistanceTitle}>
+                Remove
+              </Text>
+
+              <Text style={styles.assistanceSubtitle}>
+                {3 - removeUses} uses left
+              </Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.assistanceButton,
+              styles.hintButton,
+              (hintUses >= 1 || selectedAnswer !== null) &&
+                styles.assistanceDisabled,
+              pressed &&
+                hintUses < 1 &&
+                selectedAnswer === null &&
+                styles.buttonPressed,
+            ]}
+            onPress={handleShowHint}
+            disabled={
+              hintUses >= 1 ||
+              selectedAnswer !== null
+            }
+          >
+            <Text style={styles.assistanceIcon}>💡</Text>
+
+            <View style={styles.assistanceTextContainer}>
+              <Text style={styles.assistanceTitle}>
+                Hint
+              </Text>
+
+              <Text style={styles.assistanceSubtitle}>
+                {1 - hintUses} use left
+              </Text>
+            </View>
+          </Pressable>
+        </View>
+
+        {/* HINT DISPLAY */}
+        {hintVisible && (
+          <View style={styles.hintContainer}>
+            <Text style={styles.hintTitle}>
+              💡 Helpful Hint
+            </Text>
+
+            <Text style={styles.hintText}>
+              {hintText}
+            </Text>
+          </View>
+        )}
+
         {/* ANSWER OPTIONS */}
         <View style={styles.answers}>
           {currentQuestion.options.map((option, index) => {
             const isSelected = selectedAnswer === option;
-            const isCorrect = option === currentQuestion.answer;
+            const isRemoved = removedOptions.includes(option);
+
+            // Hides options removed using the Remove button.
+            if (isRemoved) {
+              return null;
+            }
 
             let buttonStyle = styles.answerButton;
             let textStyle = styles.answerText;
 
-            // Highlight the correct answer after selection.
-            if (selectedAnswer !== null && isCorrect) {
+            // Highlights only the user's selected answer.
+            if (isSelected && isCorrect) {
               buttonStyle = [
                 styles.answerButton,
                 styles.correct,
@@ -237,10 +409,7 @@ export default function QuizScreen({ navigation, route }) {
                 styles.answerText,
                 styles.correctText,
               ];
-            }
-
-            // Highlight the selected incorrect answer.
-            else if (isSelected) {
+            } else if (isSelected && !isCorrect) {
               buttonStyle = [
                 styles.answerButton,
                 styles.wrong,
@@ -274,23 +443,31 @@ export default function QuizScreen({ navigation, route }) {
 
         {/* ANSWER FEEDBACK */}
         {selectedAnswer !== null && (
-          <View style={styles.feedback}>
+          <View
+            style={[
+              styles.feedback,
+              isCorrect
+                ? styles.correctFeedbackBox
+                : styles.wrongFeedbackBox,
+            ]}
+          >
             <Text
               style={[
                 styles.feedbackTitle,
-                selectedAnswer === currentQuestion.answer
-                  ? styles.correctFeedback
-                  : styles.wrongFeedback,
+                isCorrect
+                  ? styles.correctFeedbackTitle
+                  : styles.wrongFeedbackTitle,
               ]}
             >
-              {selectedAnswer === currentQuestion.answer
-                ? "✓ Correct!"
-                : "✕ Not quite!"}
+              {isCorrect ? "✓ Correct!" : "✕ Incorrect!"}
             </Text>
 
-            <Text style={styles.feedbackText}>
-              {currentQuestion.explanation}
-            </Text>
+            {/* Shows explanation only when the answer is correct. */}
+            {isCorrect && (
+              <Text style={styles.feedbackText}>
+                {currentQuestion.explanation}
+              </Text>
+            )}
           </View>
         )}
 
@@ -317,6 +494,7 @@ export default function QuizScreen({ navigation, route }) {
   );
 }
 
+// Styles for the quiz screen.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -441,6 +619,83 @@ const styles = StyleSheet.create({
     lineHeight: 34,
   },
 
+  assistanceContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 18,
+  },
+
+  assistanceButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 13,
+    borderRadius: 15,
+    borderWidth: 1,
+    gap: 9,
+  },
+
+  removeButton: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FED7AA",
+  },
+
+  hintButton: {
+    backgroundColor: "#FEFCE8",
+    borderColor: "#FDE68A",
+  },
+
+  assistanceDisabled: {
+    opacity: 0.45,
+  },
+
+  buttonPressed: {
+    opacity: 0.7,
+  },
+
+  assistanceIcon: {
+    fontSize: 22,
+  },
+
+  assistanceTextContainer: {
+    flex: 1,
+  },
+
+  assistanceTitle: {
+    color: "#172554",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  assistanceSubtitle: {
+    color: "#64748B",
+    fontSize: 11,
+    marginTop: 3,
+    fontWeight: "600",
+  },
+
+  hintContainer: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
+    borderWidth: 1,
+    borderRadius: 15,
+    padding: 15,
+    marginTop: 13,
+  },
+
+  hintTitle: {
+    color: "#92400E",
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+
+  hintText: {
+    color: "#78350F",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+
   answers: {
     marginTop: 20,
     gap: 12,
@@ -483,12 +738,20 @@ const styles = StyleSheet.create({
   },
 
   feedback: {
-    backgroundColor: "#FFFFFF",
     padding: 16,
     borderRadius: 15,
     marginTop: 15,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+  },
+
+  correctFeedbackBox: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#86EFAC",
+  },
+
+  wrongFeedbackBox: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FCA5A5",
   },
 
   feedbackTitle: {
@@ -496,11 +759,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  correctFeedback: {
+  correctFeedbackTitle: {
     color: "#15803D",
   },
 
-  wrongFeedback: {
+  wrongFeedbackTitle: {
     color: "#DC2626",
   },
 
